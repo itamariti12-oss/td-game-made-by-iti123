@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("BikeConfig"))
 local BikeBuilder = require(ReplicatedStorage:WaitForChild("BikeBuilder"))
+local CourseBuilder = require(ReplicatedStorage:WaitForChild("CourseBuilder"))
 
 --------------------------------------------------------------------------------
 -- remotes
@@ -35,38 +36,25 @@ end
 
 local driverChanged = ensureRemote("DriverChanged")
 local resetBike = ensureRemote("ResetBike")
+local setStance = ensureRemote("SetStance") -- driver -> server
+local stanceChanged = ensureRemote("StanceChanged") -- server -> everyone
 
 --------------------------------------------------------------------------------
 -- world
 --------------------------------------------------------------------------------
 
-local function buildWorld()
-	if not workspace:FindFirstChild("Floor") then
-		local floor = Instance.new("Part")
-		floor.Name = "Floor"
-		floor.Size = Config.World.FloorSize
-		floor.Position = Vector3.new(0, -Config.World.FloorSize.Y / 2, 0)
-		floor.Anchored = true
-		floor.Color = Config.World.FloorColor
-		floor.Material = Enum.Material.SmoothPlastic
-		floor.TopSurface = Enum.SurfaceType.Smooth
-		floor.BottomSurface = Enum.SurfaceType.Smooth
-		floor.Parent = workspace
-	end
+CourseBuilder.Build(workspace)
 
-	if not workspace:FindFirstChildWhichIsA("SpawnLocation", true) then
-		local spawnPad = Instance.new("SpawnLocation")
-		spawnPad.Name = "SpawnPad"
-		spawnPad.Size = Vector3.new(12, 1, 12)
-		spawnPad.Position = Vector3.new(0, 0.5, 0)
-		spawnPad.Anchored = true
-		spawnPad.Color = Color3.fromRGB(120, 120, 122)
-		spawnPad.Material = Enum.Material.SmoothPlastic
-		spawnPad.Parent = workspace
-	end
+if not workspace:FindFirstChildWhichIsA("SpawnLocation", true) then
+	local spawnPad = Instance.new("SpawnLocation")
+	spawnPad.Name = "SpawnPad"
+	spawnPad.Size = Vector3.new(14, 1, 14)
+	spawnPad.Position = Vector3.new(0, 0.5, 0)
+	spawnPad.Anchored = true
+	spawnPad.Color = Color3.fromRGB(118, 118, 121)
+	spawnPad.Material = Enum.Material.SmoothPlastic
+	spawnPad.Parent = workspace
 end
-
-buildWorld()
 
 --------------------------------------------------------------------------------
 -- the bike
@@ -91,7 +79,6 @@ local function setNetworkOwner(player: Player?)
 end
 
 local function parkPose()
-	-- Zero everything out and drop the bike back on the pad.
 	for _, part in bike:GetDescendants() do
 		if part:IsA("BasePart") then
 			part.AssemblyLinearVelocity = Vector3.zero
@@ -128,8 +115,13 @@ local function onOccupantChanged()
 		end
 	end
 
+	local previous = currentDriver
 	currentDriver = player
 	setNetworkOwner(player)
+
+	if previous and previous ~= player then
+		stanceChanged:FireAllClients(previous, false)
+	end
 	driverChanged:FireAllClients(bike, player)
 end
 
@@ -186,6 +178,15 @@ resetBike.OnServerEvent:Connect(function(player)
 		return
 	end
 	resetToSpawn()
+end)
+
+-- The driver tells the server when they stand up; the server relays it so
+-- every client poses that rider's rig the same way.
+setStance.OnServerEvent:Connect(function(player, standing)
+	if player ~= currentDriver or typeof(standing) ~= "boolean" then
+		return
+	end
+	stanceChanged:FireAllClients(player, standing)
 end)
 
 Players.PlayerRemoving:Connect(function(player)

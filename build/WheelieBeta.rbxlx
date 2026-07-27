@@ -18,7 +18,7 @@
           <R20>0</R20><R21>0</R21><R22>1</R22>
         </CoordinateFrame>
         <token name="Material">272</token>
-        <Vector3 name="size"><X>512</X><Y>2</Y><Z>512</Z></Vector3>
+        <Vector3 name="size"><X>1024</X><Y>2</Y><Z>1024</Z></Vector3>
         <token name="TopSurface">0</token>
         <token name="BottomSurface">0</token>
         <token name="LeftSurface">0</token>
@@ -53,13 +53,13 @@
       </Properties>
     </Item>
   </Item>
-  <Item class="Lighting" referent="RBX12">
+  <Item class="Lighting" referent="RBX14">
     <Properties>
       <string name="Name">Lighting</string>
     </Properties>
     
   </Item>
-  <Item class="ReplicatedStorage" referent="RBX6">
+  <Item class="ReplicatedStorage" referent="RBX8">
     <Properties>
       <string name="Name">ReplicatedStorage</string>
     </Properties>
@@ -86,15 +86,21 @@ BikeConfig.DisplayName = "E Ride Pro Mini"
 -- Where the bike parks itself, and where it returns to on RESET.
 BikeConfig.SpawnCFrame = CFrame.new(0, 4, -14)
 
+-- Teal frame, blacked-out components, red shock -- the second reference bike.
+-- For the all-black look instead, set Frame/FrameDark to the Component greys.
 BikeConfig.Colors = {
-	Frame = Color3.fromRGB(26, 27, 30),
-	Accent = Color3.fromRGB(198, 26, 38),
-	Silver = Color3.fromRGB(188, 192, 198),
+	Frame = Color3.fromRGB(24, 128, 126),
+	FrameDark = Color3.fromRGB(15, 90, 90),
+	Component = Color3.fromRGB(26, 27, 30),
+	Rubber = Color3.fromRGB(18, 18, 20),
+	Accent = Color3.fromRGB(196, 32, 38),
+	Silver = Color3.fromRGB(190, 194, 200),
 	DarkMetal = Color3.fromRGB(58, 60, 64),
-	Tire = Color3.fromRGB(18, 18, 20),
-	Plate = Color3.fromRGB(236, 236, 238),
+	Gold = Color3.fromRGB(198, 158, 72),
+	Plate = Color3.fromRGB(232, 233, 236),
 	Headlight = Color3.fromRGB(255, 246, 214),
 	Taillight = Color3.fromRGB(255, 40, 40),
+	Screen = Color3.fromRGB(12, 16, 18),
 }
 
 -- All geometry is in studs, in bike-local space:
@@ -111,16 +117,24 @@ BikeConfig.Geometry = {
 	RearRadius = 1.55,
 	RearWidth = 1.25,
 
-	TreadCount = 14,
-	SpokeCount = 8,
+	-- The one colliding body part. Kept clear of both tyres: parts joined by
+	-- constraints still collide with each other, so any overlap here would
+	-- jam the wheels against the frame.
+	ChassisSize = Vector3.new(1.35, 1.45, 3.10),
+	ChassisCentre = Vector3.new(0, 2.62, -0.15),
+
+	TreadCount = 20,
+	SpokeCount = 16,
+	ChainLinks = 24,
+	SpringCoils = 14,
 }
 
 BikeConfig.Drive = {
 	MaxWheelSpeed = 42, -- rad/s at the rear wheel (~65 studs/s)
 	MotorTorque = 260000,
-	MotorAcceleration = 320,
+	MotorAcceleration = 340,
 	ReverseFactor = 0.35,
-	BrakeTorque = 90000,
+	BrakeTorque = 25000, -- weak, so releasing the throttle coasts
 }
 
 BikeConfig.Handling = {
@@ -135,13 +149,30 @@ BikeConfig.Handling = {
 
 BikeConfig.Wheelie = {
 	MaxAngle = 46, -- degrees of nose-up at a fully held wheelie
-	RiseRate = 70, -- degrees/sec going up
-	FallRate = 110, -- degrees/sec coming down
+	RiseRate = 70, -- degrees/sec on the way up
+	FallRate = 110, -- degrees/sec on the way down
 	TurnPenalty = 0.45, -- fraction of steering lost at full wheelie
+	StandThreshold = 0.35, -- fraction of MaxAngle before the rider stands up
+}
+
+BikeConfig.Jump = {
+	Power = 58, -- studs/sec of upward launch
+	ForwardBoost = 12, -- studs/sec added along the bike's heading
+	Cooldown = 0.5,
+	GroundCheck = 0.85, -- studs of clearance under the rear tyre that still counts as grounded
+}
+
+-- The stand-up-on-the-pegs pose. Angles are degrees; the rig is posed
+-- procedurally rather than with an uploaded animation.
+BikeConfig.Rider = {
+	BlendSpeed = 7, -- how fast the pose crossfades
+	StandLift = 1.25, -- studs the rider rises off the seat
+	StandForward = 0.55, -- studs forward over the bars
+	StandPitch = -8, -- degrees the whole rider pitches
 }
 
 BikeConfig.World = {
-	FloorSize = Vector3.new(512, 2, 512),
+	FloorSize = Vector3.new(1024, 2, 1024),
 	FloorColor = Color3.fromRGB(150, 150, 152),
 	FallResetY = -50,
 }
@@ -159,13 +190,18 @@ return BikeConfig
 -- Builds the E Ride Pro Mini out of parts at runtime, so the bike can be
 -- re-tuned from BikeConfig without re-modelling anything by hand.
 --
--- Physical layout:
---   Chassis      -- the only colliding body part, everything cosmetic welds to it
---   SteerColumn  -- hinged to the chassis on the raked steering axis (servo)
+-- Physical layout -- only three parts collide with the world:
+--   Chassis      -- the body; everything cosmetic welds to it
 --   FrontWheel   -- hinged to the SteerColumn (free spinning)
 --   RearWheel    -- hinged to the Chassis (motor driven)
+-- plus:
+--   SteerColumn  -- hinged to the chassis on the raked steering axis (servo)
 --   Stabilizer   -- AlignOrientation on the chassis; keeps the bike upright and
 --                   is also what pitches it back for the wheelie
+--
+-- Roblox only disables collisions between *welded* parts, so the three
+-- colliding bodies get explicit NoCollisionConstraints between them. Without
+-- those the tyres grind against the frame and the bike refuses to move.
 
 local Config = require(script.Parent.BikeConfig)
 
@@ -174,8 +210,9 @@ local BikeBuilder = {}
 local G = Config.Geometry
 local C = Config.Colors
 
-local CHASSIS_PROPS = PhysicalProperties.new(3.2, 0.35, 0.15, 1, 1)
+local CHASSIS_PROPS = PhysicalProperties.new(6.0, 0.35, 0.15, 1, 1)
 local WHEEL_PROPS = PhysicalProperties.new(1.6, 2.4, 0.1, 12, 1)
+local COLUMN_PROPS = PhysicalProperties.new(1.0, 0.30, 0.20, 1, 1)
 
 --------------------------------------------------------------------------------
 -- helpers
@@ -223,6 +260,13 @@ local function weld(a: BasePart, b: BasePart)
 	w.Parent = a
 end
 
+local function noCollide(a: BasePart, b: BasePart)
+	local nc = Instance.new("NoCollisionConstraint")
+	nc.Part0 = a
+	nc.Part1 = b
+	nc.Parent = a
+end
+
 -- Two attachments sharing one world-space frame, one on each part.
 local function attachPair(a: BasePart, b: BasePart, worldCF: CFrame, name: string): (Attachment, Attachment)
 	local a0 = Instance.new("Attachment")
@@ -238,17 +282,29 @@ local function attachPair(a: BasePart, b: BasePart, worldCF: CFrame, name: strin
 	return a0, a1
 end
 
--- A tube running between two local-space points. Returns the CFrame (long axis
--- on Z) and the length, ready to feed straight into newPart.
+-- A tube running between two points. Returns a CFrame with its long axis on Z,
+-- plus the length -- ready to feed straight into newPart.
 local function tube(from: Vector3, to: Vector3): (CFrame, number)
 	local delta = to - from
 	local length = delta.Magnitude
-	local mid = (from + to) * 0.5
 	local up = Vector3.new(0, 1, 0)
 	if math.abs(delta.Unit:Dot(up)) > 0.99 then
 		up = Vector3.new(0, 0, 1)
 	end
-	return CFrame.lookAt(mid, to, up), length
+	return CFrame.lookAt((from + to) * 0.5, to, up), length
+end
+
+-- A frame sitting at `from` and looking down the axis toward `to`, so local
+-- -Z advances along the axis. Used for laying things out on a helix or a line.
+local function axisFrame(from: Vector3, to: Vector3): (CFrame, number)
+	local delta = to - from
+	local dir = delta.Unit
+	local up = Vector3.new(0, 1, 0)
+	if math.abs(dir:Dot(up)) > 0.99 then
+		up = Vector3.new(0, 0, 1)
+	end
+	local right = dir:Cross(up).Unit
+	return CFrame.fromMatrix(from, right, right:Cross(dir)), delta.Magnitude
 end
 
 --------------------------------------------------------------------------------
@@ -260,62 +316,101 @@ local function buildWheel(model: Model, name: string, center: Vector3, radius: n
 
 	-- Cylinder parts spin about their local X axis, which is the rider's
 	-- right/left -- exactly the axle direction we want.
-	local wheel = newPart(model, name, Vector3.new(width, radius * 2, radius * 2), wheelCF, C.Tire, {
+	local wheel = newPart(model, name, Vector3.new(width, radius * 2, radius * 2), wheelCF, C.Rubber, {
 		shape = Enum.PartType.Cylinder,
 		collide = true,
 		massless = false,
 		physical = WHEEL_PROPS,
 	})
 
-	local rim = newPart(model, name .. "Rim", Vector3.new(width * 0.92, radius * 1.24, radius * 1.24), wheelCF, C.Accent, {
-		shape = Enum.PartType.Cylinder,
-		material = Enum.Material.Metal,
-		reflectance = 0.05,
-	})
-	weld(wheel, rim)
+	local function bolt(p: Part)
+		weld(wheel, p)
+	end
 
-	local hub = newPart(model, name .. "Hub", Vector3.new(width * 1.15, radius * 0.44, radius * 0.44), wheelCF, C.Silver, {
+	-- Rim: a black barrel with a machined lip on each shoulder.
+	bolt(newPart(model, name .. "Rim", Vector3.new(width * 0.86, radius * 1.20, radius * 1.20), wheelCF, C.Component, {
 		shape = Enum.PartType.Cylinder,
 		material = Enum.Material.Metal,
-	})
-	weld(wheel, hub)
+		reflectance = 0.06,
+	}))
+	for _, side in { -1, 1 } do
+		bolt(newPart(
+			model,
+			name .. "RimLip" .. (side < 0 and "L" or "R"),
+			Vector3.new(0.1, radius * 1.34, radius * 1.34),
+			wheelCF * CFrame.new(side * width * 0.42, 0, 0),
+			C.Silver,
+			{ shape = Enum.PartType.Cylinder, material = Enum.Material.Metal, reflectance = 0.2 }
+		))
+	end
+
+	-- Hub and axle.
+	bolt(newPart(model, name .. "Hub", Vector3.new(width * 1.12, radius * 0.46, radius * 0.46), wheelCF, C.Silver, {
+		shape = Enum.PartType.Cylinder,
+		material = Enum.Material.Metal,
+		reflectance = 0.15,
+	}))
+	bolt(newPart(model, name .. "Axle", Vector3.new(width * 1.55, 0.22, 0.22), wheelCF, C.DarkMetal, {
+		shape = Enum.PartType.Cylinder,
+		material = Enum.Material.Metal,
+	}))
 
 	for i = 1, G.SpokeCount do
 		local a = (i / G.SpokeCount) * math.pi * 2
-		local spoke = newPart(
+		-- Alternate spokes lace to opposite rim shoulders, like a real wheel.
+		local lace = (i % 2 == 0) and 1 or -1
+		bolt(newPart(
 			model,
 			name .. "Spoke" .. i,
-			Vector3.new(0.07, radius * 0.95, 0.07),
-			wheelCF * CFrame.Angles(a, 0, 0) * CFrame.new(0, radius * 0.5, 0),
+			Vector3.new(0.06, radius * 0.92, 0.06),
+			wheelCF * CFrame.new(lace * width * 0.22, 0, 0) * CFrame.Angles(a, 0, 0) * CFrame.new(0, radius * 0.52, 0),
 			C.Silver,
-			{ material = Enum.Material.Metal }
-		)
-		weld(wheel, spoke)
+			{ material = Enum.Material.Metal, reflectance = 0.2 }
+		))
 	end
 
-	-- Knobbly dirt-bike tread.
+	-- Knobbly dirt tread: staggered inner and outer rows.
 	for i = 1, G.TreadCount do
 		local a = (i / G.TreadCount) * math.pi * 2
-		local knob = newPart(
+		local offset = (i % 2 == 0) and width * 0.22 or -width * 0.22
+		bolt(newPart(
 			model,
 			name .. "Knob" .. i,
-			Vector3.new(width * 0.86, 0.16, radius * 0.34),
-			wheelCF * CFrame.Angles(a, 0, 0) * CFrame.new(0, radius, 0),
-			C.Tire
-		)
-		weld(wheel, knob)
+			Vector3.new(width * 0.44, 0.17, radius * 0.30),
+			wheelCF * CFrame.Angles(a, 0, 0) * CFrame.new(offset, radius, 0),
+			C.Rubber
+		))
+		bolt(newPart(
+			model,
+			name .. "Shoulder" .. i,
+			Vector3.new(width * 0.2, 0.14, radius * 0.24),
+			wheelCF * CFrame.Angles(a + math.pi / G.TreadCount, 0, 0) * CFrame.new(-offset * 1.9, radius * 0.96, 0),
+			C.Rubber
+		))
 	end
 
-	-- Rotors sit on the rider's left on both wheels, like the real bike.
-	local rotor = newPart(
-		model,
-		name .. "Rotor",
-		Vector3.new(0.09, radius * 0.78, radius * 0.78),
-		wheelCF * CFrame.new(-(width * 0.5 + 0.09), 0, 0),
-		C.Silver,
-		{ shape = Enum.PartType.Cylinder, material = Enum.Material.Metal, reflectance = 0.12 }
-	)
-	weld(wheel, rotor)
+	-- Brake rotor on the rider's left, drilled, with a floating carrier.
+	local rotorX = -(width * 0.5 + 0.1)
+	bolt(newPart(model, name .. "Rotor", Vector3.new(0.08, radius * 1.42, radius * 1.42), wheelCF * CFrame.new(rotorX, 0, 0), C.Silver, {
+		shape = Enum.PartType.Cylinder,
+		material = Enum.Material.Metal,
+		reflectance = 0.25,
+	}))
+	bolt(newPart(model, name .. "RotorCarrier", Vector3.new(0.1, radius * 0.62, radius * 0.62), wheelCF * CFrame.new(rotorX, 0, 0), C.Gold, {
+		shape = Enum.PartType.Cylinder,
+		material = Enum.Material.Metal,
+	}))
+	for i = 1, 8 do
+		local a = (i / 8) * math.pi * 2
+		bolt(newPart(
+			model,
+			name .. "RotorHole" .. i,
+			Vector3.new(0.12, 0.2, 0.2),
+			wheelCF * CFrame.new(rotorX, 0, 0) * CFrame.Angles(a, 0, 0) * CFrame.new(0, radius * 0.55, 0),
+			C.Component,
+			{ shape = Enum.PartType.Cylinder }
+		))
+	end
 
 	return wheel
 end
@@ -335,12 +430,12 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 		return baseCF * CFrame.new(x, y, z)
 	end
 
-	local function tubePart(parent: BasePart, name: string, from: Vector3, to: Vector3, thickness: number, color: Color3, material: Enum.Material?)
+	local function tubePart(host: BasePart, name: string, from: Vector3, to: Vector3, thickness: number, color: Color3, material: Enum.Material?): Part
 		local cf, length = tube(from, to)
 		local p = newPart(model, name, Vector3.new(thickness, thickness, length), baseCF * cf, color, {
 			material = material or Enum.Material.Metal,
 		})
-		weld(parent, p)
+		weld(host, p)
 		return p
 	end
 
@@ -348,7 +443,7 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	-- chassis
 	----------------------------------------------------------------------------
 
-	local chassis = newPart(model, "Chassis", Vector3.new(1.5, 1.7, 4.6), L(0, 2.55, -0.2), C.Frame, {
+	local chassis = newPart(model, "Chassis", G.ChassisSize, baseCF * CFrame.new(G.ChassisCentre), C.Frame, {
 		collide = true,
 		massless = false,
 		transparency = 1,
@@ -356,98 +451,200 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	})
 	model.PrimaryPart = chassis
 
-	-- Signature swappable battery box that fills the frame triangle.
-	local battery = newPart(model, "BatteryBox", Vector3.new(1.45, 2.1, 2.5), L(0, 2.45, 0.35), C.Frame, {
-		material = Enum.Material.Metal,
-	})
-	weld(chassis, battery)
+	local function onFrame(p: Part): Part
+		weld(chassis, p)
+		return p
+	end
 
-	local batteryTrim = newPart(model, "BatteryTrim", Vector3.new(1.5, 0.22, 2.54), L(0, 1.52, 0.35), C.Accent, {
+	-- Battery pack: the big swappable box that fills the frame triangle.
+	onFrame(newPart(model, "BatteryBox", Vector3.new(1.42, 2.05, 2.45), L(0, 2.45, 0.35), C.Component, {
 		material = Enum.Material.Metal,
-	})
-	weld(chassis, batteryTrim)
-
-	local batteryVent = newPart(model, "BatteryVent", Vector3.new(1.48, 0.5, 0.9), L(0, 3.2, 0.35), C.DarkMetal, {
+	}))
+	onFrame(newPart(model, "BatteryTrim", Vector3.new(1.48, 0.2, 2.5), L(0, 1.50, 0.35), C.Frame, {
+		material = Enum.Material.Metal,
+	}))
+	onFrame(newPart(model, "BatteryTop", Vector3.new(1.44, 0.42, 1.0), L(0, 3.30, 0.30), C.DarkMetal, {
 		material = Enum.Material.DiamondPlate,
-	})
-	weld(chassis, batteryVent)
+	}))
+	onFrame(newPart(model, "ChargePort", Vector3.new(0.3, 0.3, 0.22), L(0.72, 2.9, 1.35), C.Frame, {
+		material = Enum.Material.Metal,
+	}))
+	-- Cooling fins down each flank of the pack.
+	for i = 0, 4 do
+		for _, side in { -1, 1 } do
+			onFrame(newPart(
+				model,
+				"BatteryFin" .. i .. (side < 0 and "L" or "R"),
+				Vector3.new(0.06, 1.3, 0.16),
+				L(side * 0.74, 2.35, -0.55 + i * 0.44),
+				C.DarkMetal,
+				{ material = Enum.Material.Metal }
+			))
+		end
+	end
 
-	-- Frame tubes.
-	tubePart(chassis, "TopTube", G.SteerHead, Vector3.new(0, 3.55, -0.30), 0.32, C.Frame)
-	tubePart(chassis, "DownTube", Vector3.new(0, 2.40, -2.60), Vector3.new(0, 1.72, -0.55), 0.34, C.Frame)
+	-- Frame: twin-spar tubes in the frame colour.
+	tubePart(chassis, "TopTube", G.SteerHead, Vector3.new(0, 3.55, -0.30), 0.34, C.Frame)
+	tubePart(chassis, "TopTubeRear", Vector3.new(0, 3.55, -0.30), Vector3.new(0, 3.52, 0.95), 0.30, C.Frame)
+	tubePart(chassis, "DownTube", Vector3.new(0, 2.40, -2.60), Vector3.new(0, 1.72, -0.55), 0.36, C.Frame)
 	tubePart(chassis, "CradleTube", Vector3.new(0, 1.72, -0.55), Vector3.new(0, 1.80, 1.00), 0.32, C.Frame)
-	tubePart(chassis, "HeadGusset", G.SteerHead, Vector3.new(0, 2.40, -2.60), 0.40, C.Frame)
+	tubePart(chassis, "HeadGusset", G.SteerHead, Vector3.new(0, 2.40, -2.60), 0.44, C.Frame)
+	tubePart(chassis, "HeadStay", Vector3.new(0, 3.20, -2.75), Vector3.new(0, 2.55, -2.10), 0.24, C.Frame)
 
 	for _, side in { -1, 1 } do
 		local tag = side < 0 and "L" or "R"
 		tubePart(chassis, "Subframe" .. tag, Vector3.new(side * 0.42, 3.50, -0.10), Vector3.new(side * 0.40, 3.62, 2.70), 0.26, C.Frame)
-		tubePart(chassis, "Swingarm" .. tag, Vector3.new(side * 0.55, 2.05, 0.95), Vector3.new(side * 0.60, 1.55, 3.20), 0.36, C.Silver)
 		tubePart(chassis, "SubBrace" .. tag, Vector3.new(side * 0.44, 2.30, 1.05), Vector3.new(side * 0.40, 3.55, 1.90), 0.22, C.Frame)
+		tubePart(chassis, "PegMount" .. tag, Vector3.new(side * 0.42, 1.90, 0.85), Vector3.new(side * 0.92, 1.95, 0.85), 0.26, C.FrameDark)
+
+		-- Swingarm: tapered box-section arm with a chain slider and adjuster.
+		tubePart(chassis, "Swingarm" .. tag, Vector3.new(side * 0.55, 2.05, 0.95), Vector3.new(side * 0.62, 1.55, 3.20), 0.38, C.Silver)
+		tubePart(chassis, "SwingBrace" .. tag, Vector3.new(side * 0.55, 2.05, 1.15), Vector3.new(side * 0.60, 1.72, 2.30), 0.20, C.Silver)
+		onFrame(newPart(model, "AxleAdjuster" .. tag, Vector3.new(0.16, 0.5, 0.7), L(side * 0.62, 1.55, 3.18), C.DarkMetal, {
+			material = Enum.Material.Metal,
+		}))
 	end
-
-	-- Rear monoshock.
-	local shockCF, shockLen = tube(Vector3.new(0, 3.30, 1.05), Vector3.new(0, 1.95, 2.20))
-	local shock = newPart(model, "RearShock", Vector3.new(0.42, 0.42, shockLen), baseCF * shockCF, C.Accent, {
-		material = Enum.Material.Metal,
-	})
-	weld(chassis, shock)
-
-	-- Mid-mounted motor + drive.
-	local motor = newPart(model, "Motor", Vector3.new(1.05, 1.5, 1.5), L(0, 1.95, 0.60), C.DarkMetal, {
+	onFrame(newPart(model, "SwingPivot", Vector3.new(1.5, 0.4, 0.4), L(0, 2.05, 0.95), C.DarkMetal, {
 		shape = Enum.PartType.Cylinder,
 		material = Enum.Material.Metal,
-		reflectance = 0.08,
-	})
-	weld(chassis, motor)
+	}))
+	onFrame(newPart(model, "ChainSlider", Vector3.new(0.2, 0.22, 1.5), L(0.66, 2.02, 1.55), C.Component))
 
-	local chainGuard = newPart(model, "ChainGuard", Vector3.new(0.12, 0.46, 2.5), L(0.68, 1.85, 1.95), C.Frame, {
+	-- Rear monoshock with a visible coil spring.
+	local shockTop = Vector3.new(0, 3.30, 1.05)
+	local shockBottom = Vector3.new(0, 1.95, 2.20)
+	local shockCF, shockLen = tube(shockTop, shockBottom)
+	onFrame(newPart(model, "ShockBody", Vector3.new(0.34, 0.34, shockLen), baseCF * shockCF, C.DarkMetal, {
 		material = Enum.Material.Metal,
-	})
-	weld(chassis, chainGuard)
+	}))
+	onFrame(newPart(model, "ShockReservoir", Vector3.new(0.28, 0.28, 0.7), baseCF * tube(Vector3.new(0.3, 3.05, 1.35), Vector3.new(0.3, 2.65, 1.70)), C.Gold, {
+		material = Enum.Material.Metal,
+	}))
 
-	-- Footpegs.
-	for _, side in { -1, 1 } do
-		local tag = side < 0 and "L" or "R"
-		local peg = newPart(model, "Footpeg" .. tag, Vector3.new(0.95, 0.16, 0.34), L(side * 0.98, 1.95, 0.85), C.Silver, {
-			material = Enum.Material.DiamondPlate,
-		})
-		weld(chassis, peg)
-
-		-- Side number plate with the model name on it.
-		local plate = newPart(model, "SidePlate" .. tag, Vector3.new(0.10, 1.15, 1.5), L(side * 0.80, 2.85, 0.90), C.Accent, {
-			material = Enum.Material.SmoothPlastic,
-		})
-		weld(chassis, plate)
-
-		local gui = Instance.new("SurfaceGui")
-		gui.Face = side < 0 and Enum.NormalId.Left or Enum.NormalId.Right
-		gui.CanvasSize = Vector2.new(300, 220)
-		gui.LightInfluence = 0
-		gui.Parent = plate
-
-		local label = Instance.new("TextLabel")
-		label.Size = UDim2.fromScale(1, 1)
-		label.BackgroundTransparency = 1
-		label.Font = Enum.Font.GothamBlack
-		label.Text = "E RIDE\nPRO"
-		label.TextColor3 = Color3.new(1, 1, 1)
-		label.TextScaled = true
-		label.Parent = gui
+	local springFrame, springLen = axisFrame(shockTop, shockBottom)
+	for i = 0, G.SpringCoils do
+		local t = i / G.SpringCoils
+		local a = t * math.pi * 2 * 4.5
+		onFrame(newPart(
+			model,
+			"SpringCoil" .. i,
+			Vector3.new(0.16, 0.16, 0.16),
+			baseCF * springFrame * CFrame.new(math.cos(a) * 0.26, math.sin(a) * 0.26, -t * springLen),
+			C.Accent,
+			{ shape = Enum.PartType.Ball, material = Enum.Material.Metal }
+		))
 	end
 
-	-- Seat + tail.
-	local seatPad = newPart(model, "SeatPad", Vector3.new(1.25, 0.46, 3.0), L(0, 3.72, 1.05) * CFrame.Angles(math.rad(-3), 0, 0), C.Frame, {
+	-- Mid-mounted motor with cooling fins.
+	onFrame(newPart(model, "MotorCase", Vector3.new(1.0, 1.45, 1.45), L(0, 1.95, 0.55), C.DarkMetal, {
+		shape = Enum.PartType.Cylinder,
+		material = Enum.Material.Metal,
+		reflectance = 0.1,
+	}))
+	for i = 0, 4 do
+		onFrame(newPart(model, "MotorFin" .. i, Vector3.new(0.07, 1.6, 1.6), L(-0.4 + i * 0.2, 1.95, 0.55), C.Silver, {
+			shape = Enum.PartType.Cylinder,
+			material = Enum.Material.Metal,
+		}))
+	end
+	onFrame(newPart(model, "MotorCover", Vector3.new(0.18, 1.0, 1.0), L(-0.56, 1.95, 0.55), C.Component, {
+		shape = Enum.PartType.Cylinder,
+		material = Enum.Material.Metal,
+	}))
+	onFrame(newPart(model, "Controller", Vector3.new(0.9, 0.6, 0.5), L(0, 1.62, 1.55), C.Component, {
+		material = Enum.Material.Metal,
+	}))
+
+	-- Chain: front sprocket on the motor, rear sprocket on the wheel.
+	local frontSprocketR = 0.40
+	local rearSprocketR = 0.85
+	local chainX = 0.66
+	onFrame(newPart(model, "FrontSprocket", Vector3.new(0.14, frontSprocketR * 2, frontSprocketR * 2), L(chainX, 1.95, 0.55), C.Silver, {
+		shape = Enum.PartType.Cylinder,
+		material = Enum.Material.Metal,
+	}))
+
+	local runs = {
+		{ Vector3.new(chainX, 1.95 + frontSprocketR, 0.55), Vector3.new(chainX, 1.55 + rearSprocketR, 3.20) },
+		{ Vector3.new(chainX, 1.95 - frontSprocketR, 0.55), Vector3.new(chainX, 1.55 - rearSprocketR, 3.20) },
+	}
+	for r, run in runs do
+		local runFrame, runLen = axisFrame(run[1], run[2])
+		for i = 0, G.ChainLinks do
+			onFrame(newPart(
+				model,
+				"ChainLink" .. r .. "_" .. i,
+				Vector3.new(0.1, 0.2, 0.16),
+				baseCF * runFrame * CFrame.new(0, 0, -(i / G.ChainLinks) * runLen),
+				C.DarkMetal,
+				{ material = Enum.Material.Metal, reflectance = 0.2 }
+			))
+		end
+	end
+	onFrame(newPart(model, "ChainGuard", Vector3.new(0.12, 0.42, 2.2), L(chainX + 0.14, 2.42, 1.9), C.Component, {
+		material = Enum.Material.Metal,
+	}))
+
+	-- Rear brake.
+	onFrame(newPart(model, "RearCaliper", Vector3.new(0.24, 0.46, 0.6), L(-0.62, 1.95, 3.10), C.Accent, {
+		material = Enum.Material.Metal,
+	}))
+	tubePart(chassis, "RearBrakeLine", Vector3.new(-0.55, 2.05, 2.9), Vector3.new(-0.5, 2.4, 1.2), 0.08, C.Component)
+
+	-- Footpegs, serrated.
+	for _, side in { -1, 1 } do
+		local tag = side < 0 and "L" or "R"
+		onFrame(newPart(model, "Footpeg" .. tag, Vector3.new(0.95, 0.14, 0.34), L(side * 1.05, 1.95, 0.85), C.Silver, {
+			material = Enum.Material.DiamondPlate,
+		}))
+		for i = 0, 3 do
+			onFrame(newPart(model, "PegTooth" .. tag .. i, Vector3.new(0.12, 0.1, 0.4), L(side * (0.72 + i * 0.22), 2.02, 0.85), C.Silver, {
+				material = Enum.Material.Metal,
+			}))
+		end
+
+		-- Side panel with the model name on it.
+		local plate = onFrame(newPart(model, "SidePlate" .. tag, Vector3.new(0.1, 1.1, 1.45), L(side * 0.80, 2.88, 0.95), C.Frame))
+
+		local plateGui = Instance.new("SurfaceGui")
+		plateGui.Face = side < 0 and Enum.NormalId.Left or Enum.NormalId.Right
+		plateGui.CanvasSize = Vector2.new(290, 220)
+		plateGui.LightInfluence = 0
+		plateGui.Parent = plate
+
+		local plateLabel = Instance.new("TextLabel")
+		plateLabel.Size = UDim2.fromScale(1, 1)
+		plateLabel.BackgroundTransparency = 1
+		plateLabel.Font = Enum.Font.GothamBlack
+		plateLabel.Text = "E RIDE\nPRO"
+		plateLabel.TextColor3 = Color3.new(1, 1, 1)
+		plateLabel.TextScaled = true
+		plateLabel.Parent = plateGui
+	end
+
+	-- Seat: tapered pad with a grippy top and a rear hump.
+	onFrame(newPart(model, "SeatBase", Vector3.new(1.2, 0.3, 3.0), L(0, 3.62, 1.05) * CFrame.Angles(math.rad(-3), 0, 0), C.Component, {
+		material = Enum.Material.Metal,
+	}))
+	onFrame(newPart(model, "SeatPad", Vector3.new(1.14, 0.28, 2.9), L(0, 3.84, 1.05) * CFrame.Angles(math.rad(-3), 0, 0), C.Component, {
 		material = Enum.Material.Fabric,
-	})
-	weld(chassis, seatPad)
+	}))
+	onFrame(newPart(model, "SeatNose", Vector3.new(0.9, 0.24, 0.8), L(0, 3.78, -0.35) * CFrame.Angles(math.rad(-9), 0, 0), C.Component, {
+		material = Enum.Material.Fabric,
+	}))
+	onFrame(newPart(model, "SeatHump", Vector3.new(1.05, 0.3, 0.8), L(0, 4.0, 2.3) * CFrame.Angles(math.rad(-14), 0, 0), C.Component, {
+		material = Enum.Material.Fabric,
+	}))
 
-	local tail = newPart(model, "RearFender", Vector3.new(1.2, 0.24, 2.2) , L(0, 3.88, 2.55) * CFrame.Angles(math.rad(-8), 0, 0), C.Accent)
-	weld(chassis, tail)
-
-	local taillight = newPart(model, "Taillight", Vector3.new(0.52, 0.26, 0.16), L(0, 3.86, 3.42), C.Taillight, {
+	-- Tail.
+	onFrame(newPart(model, "RearFender", Vector3.new(1.15, 0.2, 2.0), L(0, 3.98, 2.75) * CFrame.Angles(math.rad(-12), 0, 0), C.Frame))
+	onFrame(newPart(model, "Taillight", Vector3.new(0.48, 0.22, 0.14), L(0, 3.92, 3.60), C.Taillight, {
 		material = Enum.Material.Neon,
-	})
-	weld(chassis, taillight)
+	}))
+	tubePart(chassis, "TailTidy", Vector3.new(0, 3.70, 3.15), Vector3.new(0, 3.35, 3.45), 0.14, C.Component)
+
+	-- Kickstand, folded up along the swingarm.
+	tubePart(chassis, "Kickstand", Vector3.new(-0.62, 1.95, 1.25), Vector3.new(-0.72, 1.60, 2.35), 0.16, C.Component)
 
 	----------------------------------------------------------------------------
 	-- steering column (everything that turns with the bars)
@@ -456,83 +653,135 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	local column = newPart(model, "SteerColumn", Vector3.new(0.42, 1.6, 0.42), L(0, 3.42, -2.87) * raked, C.DarkMetal, {
 		massless = false,
 		material = Enum.Material.Metal,
-		physical = PhysicalProperties.new(1.0, 0.3, 0.2, 1, 1),
+		physical = COLUMN_PROPS,
 	})
 
-	local clampTop = newPart(model, "TripleClampTop", Vector3.new(1.0, 0.22, 0.55), L(0, 3.88, -2.70) * raked, C.Silver, {
+	local function onColumn(p: Part): Part
+		weld(column, p)
+		return p
+	end
+
+	local function columnTube(name: string, from: Vector3, to: Vector3, thickness: number, color: Color3): Part
+		local cf, length = tube(from, to)
+		local p = newPart(model, name, Vector3.new(thickness, thickness, length), baseCF * cf, color, {
+			material = Enum.Material.Metal,
+		})
+		weld(column, p)
+		return p
+	end
+
+	onColumn(newPart(model, "TripleClampTop", Vector3.new(1.05, 0.24, 0.58), L(0, 3.90, -2.69) * raked, C.Silver, {
 		material = Enum.Material.Metal,
-	})
-	weld(column, clampTop)
-
-	local clampBottom = newPart(model, "TripleClampBottom", Vector3.new(1.0, 0.22, 0.55), L(0, 3.10, -3.08) * raked, C.Silver, {
+		reflectance = 0.15,
+	}))
+	onColumn(newPart(model, "TripleClampBottom", Vector3.new(1.05, 0.24, 0.58), L(0, 3.08, -3.09) * raked, C.Silver, {
 		material = Enum.Material.Metal,
-	})
-	weld(column, clampBottom)
+		reflectance = 0.15,
+	}))
+	onColumn(newPart(model, "SteerNut", Vector3.new(0.3, 0.18, 0.3), L(0, 4.02, -2.63) * raked, C.Gold, {
+		shape = Enum.PartType.Cylinder,
+		material = Enum.Material.Metal,
+	}))
 
-	-- Upside-down forks: black lowers, silver stanchions.
+	-- Upside-down forks: black lowers, gold stanchions, rubber boots.
 	local axle = G.FrontAxle
 	local forkDir = Vector3.new(0, math.cos(rake), math.sin(rake))
 	for _, side in { -1, 1 } do
 		local tag = side < 0 and "L" or "R"
 		local bottom = Vector3.new(side * 0.46, axle.Y, axle.Z)
-		local mid = bottom + forkDir * 1.25
-		local top = bottom + forkDir * 2.45
+		local seal = bottom + forkDir * 1.30
+		local top = bottom + forkDir * 2.48
 
-		local lowCF, lowLen = tube(bottom, mid)
-		local lower = newPart(model, "ForkLower" .. tag, Vector3.new(0.36, 0.36, lowLen), baseCF * lowCF, C.Frame, {
-			material = Enum.Material.Metal,
-		})
-		weld(column, lower)
+		columnTube("ForkLower" .. tag, bottom, seal, 0.40, C.Component)
+		columnTube("ForkStanchion" .. tag, seal, top, 0.30, C.Gold)
 
-		local upCF, upLen = tube(mid, top)
-		local upper = newPart(model, "ForkUpper" .. tag, Vector3.new(0.30, 0.30, upLen), baseCF * upCF, C.Silver, {
+		local sealCF = baseCF * CFrame.new(seal) * CFrame.Angles(rake, 0, 0)
+		onColumn(newPart(model, "ForkSeal" .. tag, Vector3.new(0.44, 0.16, 0.44), sealCF, C.Component, {
 			material = Enum.Material.Metal,
-			reflectance = 0.15,
-		})
-		weld(column, upper)
+		}))
+		-- Accordion dust boot above the seal.
+		for i = 1, 3 do
+			onColumn(newPart(
+				model,
+				"ForkBoot" .. tag .. i,
+				Vector3.new(0.38, 0.1, 0.38),
+				baseCF * CFrame.new(seal + forkDir * (0.18 * i)) * CFrame.Angles(rake, 0, 0),
+				C.Component
+			))
+		end
+		-- Axle clamp at the fork foot.
+		onColumn(newPart(model, "AxleClamp" .. tag, Vector3.new(0.34, 0.5, 0.5), baseCF * CFrame.new(bottom), C.Component, {
+			material = Enum.Material.Metal,
+		}))
 	end
 
-	local caliper = newPart(model, "FrontCaliper", Vector3.new(0.26, 0.5, 0.34), L(-0.55, 2.25, -3.55), C.Accent, {
+	onColumn(newPart(model, "FrontCaliper", Vector3.new(0.26, 0.5, 0.72), L(-0.6, 2.35, -3.5), C.Accent, {
 		material = Enum.Material.Metal,
-	})
-	weld(column, caliper)
+	}))
+	columnTube("FrontBrakeLine", Vector3.new(-0.55, 2.6, -3.42), Vector3.new(-0.5, 3.95, -2.85), 0.08, C.Component)
+	columnTube("ForkBrace", Vector3.new(-0.46, 2.95, -3.2), Vector3.new(0.46, 2.95, -3.2), 0.18, C.Silver)
 
-	-- Bars.
-	local riser = newPart(model, "BarRiser", Vector3.new(0.7, 0.42, 0.3), L(0, 4.10, -2.62) * raked, C.Silver, {
+	-- Bars, controls and dash.
+	onColumn(newPart(model, "BarRiser", Vector3.new(0.75, 0.44, 0.32), L(0, 4.12, -2.62) * raked, C.Silver, {
 		material = Enum.Material.Metal,
-	})
-	weld(column, riser)
-
-	local bars = newPart(model, "Handlebar", Vector3.new(3.6, 0.20, 0.20), L(0, 4.34, -2.56), C.Frame, {
+	}))
+	onColumn(newPart(model, "Handlebar", Vector3.new(3.6, 0.2, 0.2), L(0, 4.36, -2.54), C.Component, {
 		material = Enum.Material.Metal,
-	})
-	weld(column, bars)
-
-	local barPad = newPart(model, "BarPad", Vector3.new(1.15, 0.36, 0.36), L(0, 4.34, -2.56), C.Accent)
-	weld(column, barPad)
+	}))
+	onColumn(newPart(model, "BarPad", Vector3.new(1.1, 0.34, 0.34), L(0, 4.36, -2.54), C.Frame))
 
 	for _, side in { -1, 1 } do
 		local tag = side < 0 and "L" or "R"
-		local grip = newPart(model, "Grip" .. tag, Vector3.new(0.9, 0.26, 0.26), L(side * 1.42, 4.34, -2.56), C.Frame)
-		weld(column, grip)
-
-		local lever = newPart(model, "Lever" .. tag, Vector3.new(0.72, 0.08, 0.12), L(side * 1.06, 4.26, -2.76), C.Silver, {
+		onColumn(newPart(model, "Grip" .. tag, Vector3.new(0.86, 0.26, 0.26), L(side * 1.44, 4.36, -2.54), C.Component))
+		for i = 0, 3 do
+			onColumn(newPart(model, "GripRib" .. tag .. i, Vector3.new(0.08, 0.3, 0.3), L(side * (1.16 + i * 0.19), 4.36, -2.54), C.Component, {
+				shape = Enum.PartType.Cylinder,
+			}))
+		end
+		onColumn(newPart(model, "BarEnd" .. tag, Vector3.new(0.14, 0.3, 0.3), L(side * 1.88, 4.36, -2.54), C.Gold, {
+			shape = Enum.PartType.Cylinder,
 			material = Enum.Material.Metal,
-		})
-		weld(column, lever)
+		}))
+		onColumn(newPart(model, "Lever" .. tag, Vector3.new(0.74, 0.08, 0.12), L(side * 1.02, 4.28, -2.76), C.Silver, {
+			material = Enum.Material.Metal,
+			reflectance = 0.2,
+		}))
+		onColumn(newPart(model, "Perch" .. tag, Vector3.new(0.22, 0.24, 0.24), L(side * 0.96, 4.36, -2.58), C.Component, {
+			material = Enum.Material.Metal,
+		}))
 	end
 
+	local dash = onColumn(newPart(model, "DashScreen", Vector3.new(0.9, 0.55, 0.12), L(0, 4.42, -2.86) * CFrame.Angles(math.rad(38), 0, 0), C.Screen, {
+		material = Enum.Material.SmoothPlastic,
+	}))
+	local dashGui = Instance.new("SurfaceGui")
+	dashGui.Name = "Display"
+	dashGui.Face = Enum.NormalId.Front
+	dashGui.CanvasSize = Vector2.new(220, 140)
+	dashGui.LightInfluence = 0
+	dashGui.Parent = dash
+
+	local readout = Instance.new("TextLabel")
+	readout.Name = "Readout"
+	readout.Size = UDim2.fromScale(1, 1)
+	readout.BackgroundTransparency = 1
+	readout.Font = Enum.Font.Code
+	readout.Text = "0\nKM/H"
+	readout.TextColor3 = Color3.fromRGB(120, 255, 210)
+	readout.TextScaled = true
+	readout.Parent = dashGui
+
 	-- Front plate, fender and light.
-	local numberPlate = newPart(model, "NumberPlate", Vector3.new(1.5, 1.35, 0.14), L(0, 3.60, -3.34) * raked, C.Plate)
-	weld(column, numberPlate)
-
-	local headlight = newPart(model, "Headlight", Vector3.new(0.92, 0.46, 0.18), L(0, 3.92, -3.30) * raked, C.Headlight, {
+	onColumn(newPart(model, "NumberPlate", Vector3.new(1.45, 1.3, 0.12), L(0, 3.58, -3.36) * raked, C.Frame))
+	onColumn(newPart(model, "PlateTrim", Vector3.new(1.5, 0.16, 0.14), L(0, 4.14, -3.09) * raked, C.Plate))
+	onColumn(newPart(model, "HeadlightShell", Vector3.new(1.0, 0.6, 0.26), L(0, 3.96, -3.22) * raked, C.Component, {
+		material = Enum.Material.Metal,
+	}))
+	onColumn(newPart(model, "Headlight", Vector3.new(0.84, 0.42, 0.16), L(0, 3.96, -3.34) * raked, C.Headlight, {
 		material = Enum.Material.Neon,
-	})
-	weld(column, headlight)
-
-	local frontFender = newPart(model, "FrontFender", Vector3.new(1.25, 0.20, 2.1), L(0, 3.02, -3.72) * CFrame.Angles(math.rad(10), 0, 0), C.Accent)
-	weld(column, frontFender)
+	}))
+	onColumn(newPart(model, "FrontFender", Vector3.new(1.2, 0.18, 2.0), L(0, 3.06, -3.78) * CFrame.Angles(math.rad(12), 0, 0), C.Frame))
+	onColumn(newPart(model, "FenderStay", Vector3.new(0.9, 0.12, 0.5), L(0, 3.02, -3.24), C.Frame))
 
 	----------------------------------------------------------------------------
 	-- wheels + joints
@@ -544,12 +793,18 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	local sprocket = newPart(
 		model,
 		"RearSprocket",
-		Vector3.new(0.16, G.RearRadius * 0.72, G.RearRadius * 0.72),
-		baseCF * CFrame.new(G.RearAxle) * CFrame.new(G.RearWidth * 0.5 + 0.1, 0, 0),
-		C.Accent,
+		Vector3.new(0.14, rearSprocketR * 2, rearSprocketR * 2),
+		baseCF * CFrame.new(G.RearAxle) * CFrame.new(chainX, 0, 0),
+		C.Gold,
 		{ shape = Enum.PartType.Cylinder, material = Enum.Material.Metal }
 	)
 	weld(rearWheel, sprocket)
+
+	-- Parts joined by constraints still collide, so the three colliding
+	-- bodies are told explicitly not to touch each other.
+	noCollide(chassis, frontWheel)
+	noCollide(chassis, rearWheel)
+	noCollide(frontWheel, rearWheel)
 
 	-- Steering hinge: axis runs up the raked steering head.
 	local steerAxisX = Vector3.new(0, math.cos(rake), math.sin(rake))
@@ -617,7 +872,7 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	local seat = Instance.new("VehicleSeat")
 	seat.Name = "DriverSeat"
 	seat.Size = Vector3.new(1.4, 0.5, 1.7)
-	seat.CFrame = L(0, 3.95, 1.05)
+	seat.CFrame = L(0, 3.98, 1.05)
 	seat.Transparency = 1
 	seat.CanCollide = false
 	seat.Massless = true
@@ -644,12 +899,375 @@ return BikeBuilder
 ]]></ProtectedString>
       </Properties>
     </Item>
+    <Item class="ModuleScript" referent="RBX6">
+      <Properties>
+        <string name="Name">CourseBuilder</string>
+        <bool name="Disabled">false</bool>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- CourseBuilder
+-- The floor and the little jump course, built at runtime like the bike.
+--
+-- Ramps are described by the two ends of their riding surface, and the solid
+-- is derived from that: a slab thick enough that its underside is buried below
+-- the floor at both ends. That way the leading edge is always sunk into the
+-- ground and a wheel can never catch on a lip.
+
+local Config = require(script.Parent.BikeConfig)
+
+local CourseBuilder = {}
+
+local RAMP_COLOR = Color3.fromRGB(64, 66, 72)
+local STRIPE_COLOR = Config.Colors.Frame
+
+local function anchoredPart(parent: Instance, name: string, size: Vector3, cf: CFrame, color: Color3, material: Enum.Material?): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.CFrame = cf
+	p.Color = color
+	p.Material = material or Enum.Material.SmoothPlastic
+	p.Anchored = true
+	p.CanCollide = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Parent = parent
+	return p
+end
+
+-- `low` and `high` are the two ends of the riding surface, on the ground and
+-- at the top of the ramp respectively.
+local function ramp(parent: Instance, name: string, low: Vector3, high: Vector3, width: number)
+	local delta = high - low
+	local run = delta.Magnitude
+	if run < 0.1 then
+		return
+	end
+
+	local dir = delta.Unit
+	-- Surface normal: perpendicular to the slope, in the vertical plane.
+	local side = Vector3.new(dir.Z, 0, -dir.X)
+	if side.Magnitude < 1e-3 then
+		side = Vector3.new(1, 0, 0)
+	end
+	side = side.Unit
+	local normal = side:Cross(dir).Unit
+	if normal.Y < 0 then
+		normal = -normal
+	end
+
+	-- Thick enough that the underside is below y = 0 at the high end too,
+	-- so the ramp reads as solid and its toe is buried.
+	local thickness = (high.Y - low.Y) / math.max(normal.Y, 0.2) + 2
+	local centre = (low + high) * 0.5 - normal * (thickness * 0.5)
+
+	local cf = CFrame.fromMatrix(centre, side, normal)
+	anchoredPart(parent, name, Vector3.new(width, thickness, run), cf, RAMP_COLOR, Enum.Material.Concrete)
+
+	-- Edge stripes so the take-off reads at speed.
+	for _, s in { -1, 1 } do
+		anchoredPart(
+			parent,
+			name .. "Stripe" .. (s < 0 and "L" or "R"),
+			Vector3.new(0.9, 0.14, run),
+			cf * CFrame.new(s * (width * 0.5 - 0.45), thickness * 0.5, 0),
+			STRIPE_COLOR
+		)
+	end
+
+	-- Lip marker across the take-off edge. `normal` is always flipped to point
+	-- upward above, which leaves the frame's local +Z running toward the high
+	-- end of the slope.
+	anchoredPart(
+		parent,
+		name .. "Lip",
+		Vector3.new(width, 0.14, 0.7),
+		cf * CFrame.new(0, thickness * 0.5, run * 0.5 - 0.35),
+		STRIPE_COLOR
+	)
+end
+
+-- An up ramp, a flat deck, and a down ramp -- a table-top you can clear or roll.
+local function tableTop(parent: Instance, name: string, centreZ: number, x: number, width: number, height: number, deck: number, approach: number)
+	local upLow = Vector3.new(x, 0, centreZ + deck * 0.5 + approach)
+	local upHigh = Vector3.new(x, height, centreZ + deck * 0.5)
+	local downHigh = Vector3.new(x, height, centreZ - deck * 0.5)
+	local downLow = Vector3.new(x, 0, centreZ - deck * 0.5 - approach)
+
+	ramp(parent, name .. "Up", upLow, upHigh, width)
+	anchoredPart(
+		parent,
+		name .. "Deck",
+		Vector3.new(width, height, deck),
+		CFrame.new(x, height * 0.5, centreZ),
+		RAMP_COLOR,
+		Enum.Material.Concrete
+	)
+	ramp(parent, name .. "Down", downLow, downHigh, width)
+end
+
+function CourseBuilder.Build(parent: Instance): Folder
+	-- Clear anything from a previous build, plus the placeholder floor the
+	-- place file ships so Studio's edit view is not empty.
+	for _, name in { "Course", "Floor" } do
+		local existing = parent:FindFirstChild(name)
+		if existing then
+			existing:Destroy()
+		end
+	end
+
+	local course = Instance.new("Folder")
+	course.Name = "Course"
+	course.Parent = parent
+
+	local floorSize = Config.World.FloorSize
+	anchoredPart(
+		course,
+		"Floor",
+		floorSize,
+		CFrame.new(0, -floorSize.Y * 0.5, 0),
+		Config.World.FloorColor
+	)
+
+	-- A darker strip down the middle marks the main run.
+	anchoredPart(course, "Lane", Vector3.new(34, 0.12, 700), CFrame.new(0, 0.06, -180), Color3.fromRGB(128, 128, 131))
+
+	-- Main run, heading away from spawn (-Z), jumps getting bigger.
+	ramp(course, "KickerSmall", Vector3.new(0, 0, -46), Vector3.new(0, 3, -58), 26)
+	ramp(course, "KickerMedium", Vector3.new(0, 0, -96), Vector3.new(0, 5.5, -114), 28)
+	tableTop(course, "TableTop", -180, 0, 30, 6.5, 22, 20)
+	ramp(course, "KickerBig", Vector3.new(0, 0, -250), Vector3.new(0, 9.5, -274), 30)
+	-- Landing ramp for the big kicker: slopes back down to the floor.
+	ramp(course, "BigLanding", Vector3.new(0, 0, -330), Vector3.new(0, 7, -305), 34)
+
+	-- A steep launcher off to one side for pure air.
+	ramp(course, "Launcher", Vector3.new(-70, 0, -120), Vector3.new(-70, 11, -138), 22)
+
+	-- A gentle roller you can wheelie straight over.
+	ramp(course, "RollerUp", Vector3.new(70, 0, -80), Vector3.new(70, 2.5, -96), 26)
+	ramp(course, "RollerDown", Vector3.new(70, 0, -128), Vector3.new(70, 2.5, -112), 26)
+
+	-- A wide step-up nearer spawn, for a first attempt.
+	ramp(course, "StepUp", Vector3.new(0, 0, 40), Vector3.new(0, 2, 30), 40)
+
+	return course
+end
+
+return CourseBuilder
+]]></ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="ModuleScript" referent="RBX7">
+      <Properties>
+        <string name="Name">RiderPose</string>
+        <bool name="Disabled">false</bool>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- RiderPose
+-- The stand-up-on-the-pegs animation, built the same way the bike is: in code,
+-- at runtime. No uploaded animation assets.
+--
+-- Roblox animations are just Motor6D.Transform values written every frame, so
+-- that is exactly what this does. Every client runs it for every rider, which
+-- is how a normal animation would replicate anyway.
+--
+-- Two poses, crossfaded by `alpha`:
+--   SEATED   -- sat down, knees up on the pegs, leaning into the bars
+--   STANDING -- up off the seat, legs almost straight, chest over the bars,
+--               the pose in the wheelie reference photo
+
+local Config = require(script.Parent.BikeConfig)
+
+local RiderPose = {}
+
+local R = Config.Rider
+
+-- Every R15 joint's C0/C1 is rotation-free in the rest pose, so a Transform
+-- rotation acts in character space: +X rotation swings a downward-pointing
+-- limb forwards, and rotating about Z swings it out to the side.
+local function ang(x: number, y: number, z: number): CFrame
+	return CFrame.Angles(math.rad(x), math.rad(y), math.rad(z))
+end
+
+-- side is -1 for left, +1 for right, so one table describes both limbs.
+local function poseR15(standing: boolean): { [string]: CFrame }
+	if standing then
+		return {
+			Waist = ang(-40, 0, 0),
+			Neck = ang(28, 0, 0),
+			LeftHip = ang(14, 0, 7),
+			RightHip = ang(14, 0, -7),
+			LeftKnee = ang(-24, 0, 0),
+			RightKnee = ang(-24, 0, 0),
+			LeftAnkle = ang(12, 0, 0),
+			RightAnkle = ang(12, 0, 0),
+			LeftShoulder = ang(70, 0, 9),
+			RightShoulder = ang(70, 0, -9),
+			LeftElbow = ang(-12, 0, 0),
+			RightElbow = ang(-12, 0, 0),
+			LeftWrist = ang(0, 0, 0),
+			RightWrist = ang(0, 0, 0),
+		}
+	end
+	return {
+		Waist = ang(-26, 0, 0),
+		Neck = ang(16, 0, 0),
+		LeftHip = ang(70, 0, 9),
+		RightHip = ang(70, 0, -9),
+		LeftKnee = ang(-84, 0, 0),
+		RightKnee = ang(-84, 0, 0),
+		LeftAnkle = ang(18, 0, 0),
+		RightAnkle = ang(18, 0, 0),
+		LeftShoulder = ang(56, 0, 13),
+		RightShoulder = ang(56, 0, -13),
+		LeftElbow = ang(-24, 0, 0),
+		RightElbow = ang(-24, 0, 0),
+		LeftWrist = ang(6, 0, 0),
+		RightWrist = ang(6, 0, 0),
+	}
+end
+
+-- R6 has one joint per limb with pre-rotated C0s, so it gets a simpler
+-- treatment: lean the whole body and let the seat lift do the talking.
+local function poseR6(standing: boolean): { [string]: CFrame }
+	if standing then
+		return { RootJoint = ang(0, 0, 0), Neck = ang(0, 0, 0) }
+	end
+	return { RootJoint = ang(0, 0, 0), Neck = ang(0, 0, 0) }
+end
+
+local SEATED_R15 = poseR15(false)
+local STANDING_R15 = poseR15(true)
+
+-- Per-character blend state, so a rider who leaves mid-blend cleans up.
+local states: { [Model]: { alpha: number, joints: { [string]: Motor6D }, seatWeld: Weld?, baseC0: CFrame?, animate: LocalScript? } } = {}
+
+local function collect(character: Model)
+	local joints: { [string]: Motor6D } = {}
+	for _, d in character:GetDescendants() do
+		if d:IsA("Motor6D") then
+			joints[d.Name] = d
+		end
+	end
+	return joints
+end
+
+local function stopAnimator(character: Model)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+	for _, track in animator:GetPlayingAnimationTracks() do
+		track:Stop(0)
+	end
+end
+
+--------------------------------------------------------------------------------
+
+-- Call every frame while the character is riding.
+function RiderPose.Update(character: Model, standing: boolean, dt: number)
+	local state = states[character]
+	if not state then
+		-- Take the rig over: the default sit animation would fight us for the
+		-- same Motor6D.Transform values every frame.
+		local animate = character:FindFirstChild("Animate")
+		if animate and animate:IsA("LocalScript") and animate.Enabled then
+			animate.Enabled = false
+		else
+			animate = nil
+		end
+		stopAnimator(character)
+
+		state = {
+			alpha = 0,
+			joints = collect(character),
+			seatWeld = nil,
+			baseC0 = nil,
+			animate = animate :: LocalScript?,
+		}
+		states[character] = state
+	end
+
+	local target = standing and 1 or 0
+	state.alpha += math.clamp(target - state.alpha, -R.BlendSpeed * dt, R.BlendSpeed * dt)
+	local alpha = state.alpha
+
+	-- Lift the rider off the seat. The seat weld's C0 is axis-aligned with the
+	-- seat, so this offset is in bike space and tips with the bike.
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") then
+		local seatWeld = root:FindFirstChild("SeatWeld")
+		if seatWeld and seatWeld:IsA("Weld") then
+			if state.seatWeld ~= seatWeld then
+				state.seatWeld = seatWeld
+				state.baseC0 = seatWeld.C0
+			end
+			local base = state.baseC0
+			if base then
+				seatWeld.C0 = base
+					* CFrame.new(0, R.StandLift * alpha, -R.StandForward * alpha)
+					* CFrame.Angles(math.rad(R.StandPitch) * alpha, 0, 0)
+			end
+		end
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local isR15 = humanoid ~= nil and humanoid.RigType == Enum.HumanoidRigType.R15
+
+	if isR15 then
+		for name, seatedCF in SEATED_R15 do
+			local joint = state.joints[name]
+			if joint and joint.Parent then
+				joint.Transform = seatedCF:Lerp(STANDING_R15[name], alpha)
+			end
+		end
+	else
+		-- R6: lean the torso, which with the seat lift still reads as standing.
+		local rootJoint = state.joints["RootJoint"]
+		if rootJoint and rootJoint.Parent then
+			rootJoint.Transform = ang(0, 0, 0):Lerp(ang(-18, 0, 0), alpha)
+		end
+		local _ = poseR6
+	end
+end
+
+-- Hand the rig back to the normal animation system.
+function RiderPose.Release(character: Model)
+	local state = states[character]
+	if not state then
+		return
+	end
+
+	for _, joint in state.joints do
+		if joint.Parent then
+			joint.Transform = CFrame.identity
+		end
+	end
+
+	local seatWeld = state.seatWeld
+	if seatWeld and seatWeld.Parent and state.baseC0 then
+		seatWeld.C0 = state.baseC0
+	end
+
+	if state.animate and state.animate.Parent then
+		state.animate.Enabled = true
+	end
+
+	states[character] = nil
+end
+
+return RiderPose
+]]></ProtectedString>
+      </Properties>
+    </Item>
   </Item>
-  <Item class="ServerScriptService" referent="RBX8">
+  <Item class="ServerScriptService" referent="RBX10">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="RBX7">
+    <Item class="Script" referent="RBX9">
       <Properties>
         <string name="Name">BikeServer</string>
         <bool name="Disabled">false</bool>
@@ -665,6 +1283,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("BikeConfig"))
 local BikeBuilder = require(ReplicatedStorage:WaitForChild("BikeBuilder"))
+local CourseBuilder = require(ReplicatedStorage:WaitForChild("CourseBuilder"))
 
 --------------------------------------------------------------------------------
 -- remotes
@@ -690,38 +1309,25 @@ end
 
 local driverChanged = ensureRemote("DriverChanged")
 local resetBike = ensureRemote("ResetBike")
+local setStance = ensureRemote("SetStance") -- driver -> server
+local stanceChanged = ensureRemote("StanceChanged") -- server -> everyone
 
 --------------------------------------------------------------------------------
 -- world
 --------------------------------------------------------------------------------
 
-local function buildWorld()
-	if not workspace:FindFirstChild("Floor") then
-		local floor = Instance.new("Part")
-		floor.Name = "Floor"
-		floor.Size = Config.World.FloorSize
-		floor.Position = Vector3.new(0, -Config.World.FloorSize.Y / 2, 0)
-		floor.Anchored = true
-		floor.Color = Config.World.FloorColor
-		floor.Material = Enum.Material.SmoothPlastic
-		floor.TopSurface = Enum.SurfaceType.Smooth
-		floor.BottomSurface = Enum.SurfaceType.Smooth
-		floor.Parent = workspace
-	end
+CourseBuilder.Build(workspace)
 
-	if not workspace:FindFirstChildWhichIsA("SpawnLocation", true) then
-		local spawnPad = Instance.new("SpawnLocation")
-		spawnPad.Name = "SpawnPad"
-		spawnPad.Size = Vector3.new(12, 1, 12)
-		spawnPad.Position = Vector3.new(0, 0.5, 0)
-		spawnPad.Anchored = true
-		spawnPad.Color = Color3.fromRGB(120, 120, 122)
-		spawnPad.Material = Enum.Material.SmoothPlastic
-		spawnPad.Parent = workspace
-	end
+if not workspace:FindFirstChildWhichIsA("SpawnLocation", true) then
+	local spawnPad = Instance.new("SpawnLocation")
+	spawnPad.Name = "SpawnPad"
+	spawnPad.Size = Vector3.new(14, 1, 14)
+	spawnPad.Position = Vector3.new(0, 0.5, 0)
+	spawnPad.Anchored = true
+	spawnPad.Color = Color3.fromRGB(118, 118, 121)
+	spawnPad.Material = Enum.Material.SmoothPlastic
+	spawnPad.Parent = workspace
 end
-
-buildWorld()
 
 --------------------------------------------------------------------------------
 -- the bike
@@ -746,7 +1352,6 @@ local function setNetworkOwner(player: Player?)
 end
 
 local function parkPose()
-	-- Zero everything out and drop the bike back on the pad.
 	for _, part in bike:GetDescendants() do
 		if part:IsA("BasePart") then
 			part.AssemblyLinearVelocity = Vector3.zero
@@ -783,8 +1388,13 @@ local function onOccupantChanged()
 		end
 	end
 
+	local previous = currentDriver
 	currentDriver = player
 	setNetworkOwner(player)
+
+	if previous and previous ~= player then
+		stanceChanged:FireAllClients(previous, false)
+	end
 	driverChanged:FireAllClients(bike, player)
 end
 
@@ -843,6 +1453,15 @@ resetBike.OnServerEvent:Connect(function(player)
 	resetToSpawn()
 end)
 
+-- The driver tells the server when they stand up; the server relays it so
+-- every client poses that rider's rig the same way.
+setStance.OnServerEvent:Connect(function(player, standing)
+	if player ~= currentDriver or typeof(standing) ~= "boolean" then
+		return
+	end
+	stanceChanged:FireAllClients(player, standing)
+end)
+
 Players.PlayerRemoving:Connect(function(player)
 	resetDebounce[player] = nil
 	if currentDriver == player then
@@ -881,15 +1500,15 @@ end)
       </Properties>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="RBX11">
+  <Item class="StarterPlayer" referent="RBX13">
     <Properties>
       <string name="Name">StarterPlayer</string>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="RBX10">
+    <Item class="StarterPlayerScripts" referent="RBX12">
     <Properties>
       <string name="Name">StarterPlayerScripts</string>
     </Properties>
-    <Item class="LocalScript" referent="RBX9">
+    <Item class="LocalScript" referent="RBX11">
       <Properties>
         <string name="Name">BikeClient</string>
         <bool name="Disabled">false</bool>
@@ -898,11 +1517,15 @@ end)
 -- Runs on whoever is sitting on the bike. That client has network ownership of
 -- the whole assembly, so driving it from here is smooth and lag free.
 --
+-- It also poses every rider's rig, including other players', because stance is
+-- relayed through the server.
+--
 -- Controls
 --   W / S or the mobile thumbstick .. throttle & brake
 --   A / D or the mobile thumbstick .. steer
---   Q  or the on-screen WHEELIE button (hold) .. wheelie
---   R  or the on-screen RESET button .. put the bike back on the pad
+--   Q  or the WHEELIE button (hold) .. wheelie, and the rider stands up
+--   R  or the JUMP button .. jump
+--   T  or the RESET button .. put the bike back on the pad
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -911,15 +1534,19 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("BikeConfig"))
+local RiderPose = require(ReplicatedStorage:WaitForChild("RiderPose"))
 
 local remotes = ReplicatedStorage:WaitForChild("BikeRemotes")
 local driverChanged = remotes:WaitForChild("DriverChanged") :: RemoteEvent
 local resetBike = remotes:WaitForChild("ResetBike") :: RemoteEvent
+local setStance = remotes:WaitForChild("SetStance") :: RemoteEvent
+local stanceChanged = remotes:WaitForChild("StanceChanged") :: RemoteEvent
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 local WHEELIE_ACTION = "ERideWheelie"
+local JUMP_ACTION = "ERideJump"
 local RESET_ACTION = "ERideReset"
 
 --------------------------------------------------------------------------------
@@ -929,15 +1556,23 @@ local RESET_ACTION = "ERideReset"
 local driving = false
 local bike: Model? = nil
 local chassis: Part? = nil
+local frontWheel: Part? = nil
+local rearWheel: Part? = nil
 local seat: VehicleSeat? = nil
 local stabilizer: AlignOrientation? = nil
 local rearHinge: HingeConstraint? = nil
 local steerHinge: HingeConstraint? = nil
+local readout: TextLabel? = nil
 
 local wheelieHeld = false
 local wheelieAngle = 0
 local heading: number? = nil
-local touchInput: InputObject? = nil
+local nextJump = 0
+local standing = false
+local touchInputs: { [Enum.UserInputType]: TextButton } = {}
+
+-- Everyone we are currently posing, driver included.
+local riders: { [Player]: boolean } = {}
 
 --------------------------------------------------------------------------------
 -- HUD
@@ -956,7 +1591,6 @@ local function roundify(instance: GuiObject, radius: number)
 	corner.Parent = instance
 end
 
--- Wheelie meter.
 local meter = Instance.new("Frame")
 meter.Name = "WheelieMeter"
 meter.AnchorPoint = Vector2.new(0.5, 1)
@@ -971,7 +1605,7 @@ roundify(meter, 11)
 local meterFill = Instance.new("Frame")
 meterFill.Name = "Fill"
 meterFill.Size = UDim2.new(0, 0, 1, 0)
-meterFill.BackgroundColor3 = Config.Colors.Accent
+meterFill.BackgroundColor3 = Config.Colors.Frame
 meterFill.BorderSizePixel = 0
 meterFill.Parent = meter
 roundify(meterFill, 11)
@@ -989,54 +1623,47 @@ local hint = Instance.new("TextLabel")
 hint.Name = "Hint"
 hint.AnchorPoint = Vector2.new(0.5, 1)
 hint.Position = UDim2.new(0.5, 0, 1, -62)
-hint.Size = UDim2.new(0, 520, 0, 20)
+hint.Size = UDim2.new(0, 620, 0, 20)
 hint.BackgroundTransparency = 1
 hint.Font = Enum.Font.Gotham
-hint.Text = "W/S  throttle     A/D  steer     Q  wheelie     R  reset"
+hint.Text = "W/S  throttle     A/D  steer     Q  wheelie     R  jump     T  reset"
 hint.TextSize = 14
 hint.TextColor3 = Color3.fromRGB(235, 235, 238)
 hint.TextTransparency = 0.15
 hint.Visible = not UserInputService.TouchEnabled
 hint.Parent = gui
 
--- Mobile buttons.
-local wheelieButton = Instance.new("TextButton")
-wheelieButton.Name = "Wheelie"
-wheelieButton.AnchorPoint = Vector2.new(1, 1)
-wheelieButton.Position = UDim2.new(1, -28, 1, -28)
-wheelieButton.Size = UDim2.new(0, 132, 0, 132)
-wheelieButton.BackgroundColor3 = Config.Colors.Accent
-wheelieButton.BackgroundTransparency = 0.12
-wheelieButton.AutoButtonColor = false
-wheelieButton.Font = Enum.Font.GothamBlack
-wheelieButton.Text = "WHEELIE"
-wheelieButton.TextSize = 20
-wheelieButton.TextColor3 = Color3.new(1, 1, 1)
-wheelieButton.Visible = UserInputService.TouchEnabled
-wheelieButton.Parent = gui
-roundify(wheelieButton, 66)
+local function makeButton(name: string, text: string, size: UDim2, position: UDim2, color: Color3, radius: number): TextButton
+	local button = Instance.new("TextButton")
+	button.Name = name
+	button.AnchorPoint = Vector2.new(1, 1)
+	button.Position = position
+	button.Size = size
+	button.BackgroundColor3 = color
+	button.BackgroundTransparency = 0.12
+	button.AutoButtonColor = false
+	button.Font = Enum.Font.GothamBlack
+	button.Text = text
+	button.TextSize = 18
+	button.TextColor3 = Color3.new(1, 1, 1)
+	button.Visible = UserInputService.TouchEnabled
+	button.Parent = gui
+	roundify(button, radius)
 
-local wheelieStroke = Instance.new("UIStroke")
-wheelieStroke.Color = Color3.new(1, 1, 1)
-wheelieStroke.Thickness = 3
-wheelieStroke.Transparency = 0.55
-wheelieStroke.Parent = wheelieButton
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.new(1, 1, 1)
+	stroke.Thickness = 3
+	stroke.Transparency = 0.55
+	stroke.Parent = button
 
-local resetButton = Instance.new("TextButton")
-resetButton.Name = "Reset"
-resetButton.AnchorPoint = Vector2.new(1, 1)
-resetButton.Position = UDim2.new(1, -28, 1, -178)
-resetButton.Size = UDim2.new(0, 132, 0, 46)
-resetButton.BackgroundColor3 = Color3.fromRGB(32, 33, 36)
-resetButton.BackgroundTransparency = 0.15
-resetButton.AutoButtonColor = false
-resetButton.Font = Enum.Font.GothamBold
-resetButton.Text = "RESET"
-resetButton.TextSize = 16
-resetButton.TextColor3 = Color3.new(1, 1, 1)
-resetButton.Visible = UserInputService.TouchEnabled
-resetButton.Parent = gui
-roundify(resetButton, 12)
+	return button
+end
+
+local wheelieButton = makeButton("Wheelie", "WHEELIE", UDim2.new(0, 132, 0, 132), UDim2.new(1, -24, 1, -24), Config.Colors.Frame, 66)
+local jumpButton = makeButton("Jump", "JUMP", UDim2.new(0, 104, 0, 104), UDim2.new(1, -170, 1, -34), Config.Colors.Accent, 52)
+local resetButton = makeButton("Reset", "RESET", UDim2.new(0, 104, 0, 42), UDim2.new(1, -38, 1, -170), Color3.fromRGB(32, 33, 36), 12)
+
+local wheelieStroke = wheelieButton:FindFirstChildOfClass("UIStroke") :: UIStroke
 
 --------------------------------------------------------------------------------
 -- input
@@ -1045,7 +1672,58 @@ roundify(resetButton, 12)
 local function setWheelie(held: boolean)
 	wheelieHeld = held
 	wheelieStroke.Transparency = held and 0.05 or 0.55
-	wheelieButton.BackgroundTransparency = held and 0.0 or 0.12
+	wheelieButton.BackgroundTransparency = held and 0 or 0.12
+end
+
+local function tryJump()
+	if not driving then
+		return
+	end
+	local wheel = rearWheel
+	local body = chassis
+	if not (wheel and body) then
+		return
+	end
+
+	local now = os.clock()
+	if now < nextJump then
+		return
+	end
+
+	-- Only launch off something solid.
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { bike :: Instance, player.Character :: Instance }
+	local reach = Config.Geometry.RearRadius + Config.Jump.GroundCheck
+	if not workspace:Raycast(wheel.Position, Vector3.new(0, -reach, 0), params) then
+		return
+	end
+
+	nextJump = now + Config.Jump.Cooldown
+
+	local forward = body.CFrame.LookVector
+	local flat = Vector3.new(forward.X, 0, forward.Z)
+	if flat.Magnitude > 1e-3 then
+		flat = flat.Unit
+	else
+		flat = Vector3.zero
+	end
+	local velocity = Vector3.new(0, Config.Jump.Power, 0) + flat * Config.Jump.ForwardBoost
+
+	-- The wheels are their own assemblies, so each needs its own impulse or
+	-- the hinges would drag them back down.
+	for _, part in { body, wheel, frontWheel } do
+		if part then
+			part:ApplyImpulse(velocity * part.AssemblyMass)
+		end
+	end
+
+	if jumpButton.Visible then
+		jumpButton.BackgroundTransparency = 0
+		task.delay(0.12, function()
+			jumpButton.BackgroundTransparency = 0.12
+		end)
+	end
 end
 
 local function onWheelieAction(_: string, state: Enum.UserInputState)
@@ -1057,6 +1735,13 @@ local function onWheelieAction(_: string, state: Enum.UserInputState)
 	return Enum.ContextActionResult.Sink
 end
 
+local function onJumpAction(_: string, state: Enum.UserInputState)
+	if state == Enum.UserInputState.Begin then
+		tryJump()
+	end
+	return Enum.ContextActionResult.Sink
+end
+
 local function onResetAction(_: string, state: Enum.UserInputState)
 	if state == Enum.UserInputState.Begin then
 		resetBike:FireServer()
@@ -1064,47 +1749,63 @@ local function onResetAction(_: string, state: Enum.UserInputState)
 	return Enum.ContextActionResult.Sink
 end
 
+-- Hold-to-wheelie on touch. Releases are caught globally so sliding a thumb
+-- off the button still drops the wheelie instead of sticking it on.
 wheelieButton.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-		touchInput = input
+		touchInputs[input.UserInputType] = wheelieButton
 		setWheelie(true)
 	end
 end)
 
--- Catching the release globally means sliding a thumb off the button still
--- drops the wheelie instead of sticking it on.
 UserInputService.InputEnded:Connect(function(input)
-	if touchInput == input then
-		touchInput = nil
+	if touchInputs[input.UserInputType] == wheelieButton then
+		touchInputs[input.UserInputType] = nil
 		setWheelie(false)
 	end
 end)
 
+jumpButton.Activated:Connect(tryJump)
 resetButton.Activated:Connect(function()
 	resetBike:FireServer()
 end)
 
 local function bindControls()
 	ContextActionService:BindAction(WHEELIE_ACTION, onWheelieAction, false, Enum.KeyCode.Q)
-	ContextActionService:BindAction(RESET_ACTION, onResetAction, false, Enum.KeyCode.R)
+	ContextActionService:BindAction(JUMP_ACTION, onJumpAction, false, Enum.KeyCode.R)
+	ContextActionService:BindAction(RESET_ACTION, onResetAction, false, Enum.KeyCode.T)
 end
 
 local function unbindControls()
 	ContextActionService:UnbindAction(WHEELIE_ACTION)
+	ContextActionService:UnbindAction(JUMP_ACTION)
 	ContextActionService:UnbindAction(RESET_ACTION)
 	setWheelie(false)
-	touchInput = nil
+	table.clear(touchInputs)
 end
 
 --------------------------------------------------------------------------------
 -- driving
 --------------------------------------------------------------------------------
 
+local function pushStance(value: boolean)
+	if standing == value then
+		return
+	end
+	standing = value
+	setStance:FireServer(value)
+	-- Pose ourselves immediately rather than waiting for the round trip.
+	riders[player] = value
+end
+
 local function stopDriving()
 	driving = false
-	bike, chassis, seat, stabilizer, rearHinge, steerHinge = nil, nil, nil, nil, nil, nil
+	bike, chassis, frontWheel, rearWheel = nil, nil, nil, nil
+	seat, stabilizer, rearHinge, steerHinge, readout = nil, nil, nil, nil, nil
 	wheelieAngle = 0
 	heading = nil
+	standing = false
+	riders[player] = false
 	gui.Enabled = false
 	unbindControls()
 end
@@ -1118,13 +1819,21 @@ local function startDriving(model: Model)
 
 	bike = model
 	chassis = body
+	frontWheel = model:FindFirstChild("FrontWheel") :: Part
+	rearWheel = model:FindFirstChild("RearWheel") :: Part
 	seat = vehicleSeat
 	stabilizer = body:FindFirstChild("Stabilizer") :: AlignOrientation
 	rearHinge = body:FindFirstChild("RearHinge") :: HingeConstraint
 	steerHinge = body:FindFirstChild("SteerHinge") :: HingeConstraint
 
+	local dash = model:FindFirstChild("DashScreen")
+	local display = dash and dash:FindFirstChild("Display")
+	readout = display and display:FindFirstChild("Readout") :: TextLabel?
+
 	wheelieAngle = 0
 	heading = nil
+	standing = false
+	nextJump = 0
 	driving = true
 	gui.Enabled = true
 	bindControls()
@@ -1138,6 +1847,10 @@ driverChanged.OnClientEvent:Connect(function(model: Model, driver: Player?)
 	end
 end)
 
+stanceChanged.OnClientEvent:Connect(function(who: Player, value: boolean)
+	riders[who] = value
+end)
+
 --------------------------------------------------------------------------------
 -- simulation
 --------------------------------------------------------------------------------
@@ -1147,6 +1860,14 @@ local function wrapAngle(a: number): number
 end
 
 RunService.Heartbeat:Connect(function(dt)
+	-- Pose every rider we know about, ourselves included.
+	for who, isStanding in riders do
+		local character = who.Character
+		if character and character.Parent then
+			RiderPose.Update(character, isStanding, dt)
+		end
+	end
+
 	if not driving then
 		return
 	end
@@ -1161,6 +1882,10 @@ RunService.Heartbeat:Connect(function(dt)
 		return
 	end
 	if not body.Parent or vehicleSeat.Occupant == nil then
+		local character = player.Character
+		if character then
+			RiderPose.Release(character)
+		end
 		stopDriving()
 		return
 	end
@@ -1172,6 +1897,9 @@ RunService.Heartbeat:Connect(function(dt)
 	local target = wheelieHeld and maxWheelie or 0
 	local rate = wheelieHeld and Config.Wheelie.RiseRate or Config.Wheelie.FallRate
 	wheelieAngle += math.clamp(target - wheelieAngle, -rate * dt, rate * dt)
+
+	-- Past a threshold the rider comes up off the seat onto the pegs.
+	pushStance(wheelieAngle > maxWheelie * Config.Wheelie.StandThreshold)
 
 	-- Current heading, taken from the chassis flattened onto the ground plane.
 	local look = body.CFrame.LookVector
@@ -1221,10 +1949,14 @@ RunService.Heartbeat:Connect(function(dt)
 	-- Point the forks where the rider is steering.
 	steerJoint.TargetAngle = -steer * Config.Handling.MaxSteerAngle
 
-	-- HUD.
+	-- HUD and the bar-mounted dash.
 	local pct = wheelieAngle / maxWheelie
 	meterFill.Size = UDim2.new(pct, 0, 1, 0)
 	meterLabel.Text = string.format("WHEELIE  %d%%", math.floor(pct * 100 + 0.5))
+
+	if readout then
+		readout.Text = string.format("%d\nKM/H", math.floor(speed * 0.28 * 3.6 + 0.5))
+	end
 end)
 ]]></ProtectedString>
       </Properties>

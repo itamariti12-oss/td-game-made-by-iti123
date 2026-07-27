@@ -96,10 +96,12 @@ def service(class_name: str, children: list[str], properties: str = "") -> str:
 
 
 def build() -> str:
+    # Placeholder floor so Studio's edit view is not empty; CourseBuilder
+    # replaces it (and adds the jumps) the moment the game runs.
     floor = part_item(
         "Part",
         "Floor",
-        (512, 2, 512),
+        (1024, 2, 1024),
         (0, -1, 0),
         (150, 150, 152),
     )
@@ -129,6 +131,8 @@ def build() -> str:
         [
             script_item("ModuleScript", "BikeConfig", SRC / "ReplicatedStorage" / "BikeConfig.luau"),
             script_item("ModuleScript", "BikeBuilder", SRC / "ReplicatedStorage" / "BikeBuilder.luau"),
+            script_item("ModuleScript", "CourseBuilder", SRC / "ReplicatedStorage" / "CourseBuilder.luau"),
+            script_item("ModuleScript", "RiderPose", SRC / "ReplicatedStorage" / "RiderPose.luau"),
         ],
     )
 

@@ -17,15 +17,21 @@ BikeConfig.DisplayName = "E Ride Pro Mini"
 -- Where the bike parks itself, and where it returns to on RESET.
 BikeConfig.SpawnCFrame = CFrame.new(0, 4, -14)
 
+-- Teal frame, blacked-out components, red shock -- the second reference bike.
+-- For the all-black look instead, set Frame/FrameDark to the Component greys.
 BikeConfig.Colors = {
-	Frame = Color3.fromRGB(26, 27, 30),
-	Accent = Color3.fromRGB(198, 26, 38),
-	Silver = Color3.fromRGB(188, 192, 198),
+	Frame = Color3.fromRGB(24, 128, 126),
+	FrameDark = Color3.fromRGB(15, 90, 90),
+	Component = Color3.fromRGB(26, 27, 30),
+	Rubber = Color3.fromRGB(18, 18, 20),
+	Accent = Color3.fromRGB(196, 32, 38),
+	Silver = Color3.fromRGB(190, 194, 200),
 	DarkMetal = Color3.fromRGB(58, 60, 64),
-	Tire = Color3.fromRGB(18, 18, 20),
-	Plate = Color3.fromRGB(236, 236, 238),
+	Gold = Color3.fromRGB(198, 158, 72),
+	Plate = Color3.fromRGB(232, 233, 236),
 	Headlight = Color3.fromRGB(255, 246, 214),
 	Taillight = Color3.fromRGB(255, 40, 40),
+	Screen = Color3.fromRGB(12, 16, 18),
 }
 
 -- All geometry is in studs, in bike-local space:
@@ -42,16 +48,24 @@ BikeConfig.Geometry = {
 	RearRadius = 1.55,
 	RearWidth = 1.25,
 
-	TreadCount = 14,
-	SpokeCount = 8,
+	-- The one colliding body part. Kept clear of both tyres: parts joined by
+	-- constraints still collide with each other, so any overlap here would
+	-- jam the wheels against the frame.
+	ChassisSize = Vector3.new(1.35, 1.45, 3.10),
+	ChassisCentre = Vector3.new(0, 2.62, -0.15),
+
+	TreadCount = 20,
+	SpokeCount = 16,
+	ChainLinks = 24,
+	SpringCoils = 14,
 }
 
 BikeConfig.Drive = {
 	MaxWheelSpeed = 42, -- rad/s at the rear wheel (~65 studs/s)
 	MotorTorque = 260000,
-	MotorAcceleration = 320,
+	MotorAcceleration = 340,
 	ReverseFactor = 0.35,
-	BrakeTorque = 90000,
+	BrakeTorque = 25000, -- weak, so releasing the throttle coasts
 }
 
 BikeConfig.Handling = {
@@ -66,13 +80,30 @@ BikeConfig.Handling = {
 
 BikeConfig.Wheelie = {
 	MaxAngle = 46, -- degrees of nose-up at a fully held wheelie
-	RiseRate = 70, -- degrees/sec going up
-	FallRate = 110, -- degrees/sec coming down
+	RiseRate = 70, -- degrees/sec on the way up
+	FallRate = 110, -- degrees/sec on the way down
 	TurnPenalty = 0.45, -- fraction of steering lost at full wheelie
+	StandThreshold = 0.35, -- fraction of MaxAngle before the rider stands up
+}
+
+BikeConfig.Jump = {
+	Power = 58, -- studs/sec of upward launch
+	ForwardBoost = 12, -- studs/sec added along the bike's heading
+	Cooldown = 0.5,
+	GroundCheck = 0.85, -- studs of clearance under the rear tyre that still counts as grounded
+}
+
+-- The stand-up-on-the-pegs pose. Angles are degrees; the rig is posed
+-- procedurally rather than with an uploaded animation.
+BikeConfig.Rider = {
+	BlendSpeed = 7, -- how fast the pose crossfades
+	StandLift = 1.25, -- studs the rider rises off the seat
+	StandForward = 0.55, -- studs forward over the bars
+	StandPitch = -8, -- degrees the whole rider pitches
 }
 
 BikeConfig.World = {
-	FloorSize = Vector3.new(512, 2, 512),
+	FloorSize = Vector3.new(1024, 2, 1024),
 	FloorColor = Color3.fromRGB(150, 150, 152),
 	FallResetY = -50,
 }

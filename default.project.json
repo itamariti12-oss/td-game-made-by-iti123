@@ -16,6 +16,12 @@
       },
       "BikeBuilder": {
         "$path": "src/ReplicatedStorage/BikeBuilder.luau"
+      },
+      "CourseBuilder": {
+        "$path": "src/ReplicatedStorage/CourseBuilder.luau"
+      },
+      "RiderPose": {
+        "$path": "src/ReplicatedStorage/RiderPose.luau"
       }
     },
     "ServerScriptService": {
