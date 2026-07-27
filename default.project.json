@@ -1,0 +1,37 @@
+{
+  "name": "WheelieBeta",
+  "tree": {
+    "$className": "DataModel",
+    "Workspace": {
+      "$className": "Workspace",
+      "$properties": {
+        "FilteringEnabled": true,
+        "Gravity": 196.2
+      }
+    },
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "BikeConfig": {
+        "$path": "src/ReplicatedStorage/BikeConfig.luau"
+      },
+      "BikeBuilder": {
+        "$path": "src/ReplicatedStorage/BikeBuilder.luau"
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "BikeServer": {
+        "$path": "src/ServerScriptService/BikeServer.server.luau"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "BikeClient": {
+          "$path": "src/StarterPlayer/StarterPlayerScripts/BikeClient.client.luau"
+        }
+      }
+    }
+  }
+}
