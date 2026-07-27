@@ -39,6 +39,7 @@ type PartOpts = {
 	material: Enum.Material?,
 	physical: PhysicalProperties?,
 	reflectance: number?,
+	paint: string?, -- marks the part as repaintable: "Frame", "Rim", "Tyre", "Knob"
 }
 
 local function newPart(parent: Instance, name: string, size: Vector3, cf: CFrame, color: Color3, opts: PartOpts?): Part
@@ -61,6 +62,9 @@ local function newPart(parent: Instance, name: string, size: Vector3, cf: CFrame
 	p.BottomSurface = Enum.SurfaceType.Smooth
 	if o.physical then
 		p.CustomPhysicalProperties = o.physical
+	end
+	if o.paint then
+		p:SetAttribute("Paint", o.paint)
 	end
 	p.Parent = parent
 	return p
@@ -134,6 +138,7 @@ local function buildWheel(model: Model, name: string, center: Vector3, radius: n
 		collide = true,
 		massless = false,
 		physical = WHEEL_PROPS,
+		paint = "Tyre",
 	})
 
 	local function bolt(p: Part)
@@ -141,10 +146,11 @@ local function buildWheel(model: Model, name: string, center: Vector3, radius: n
 	end
 
 	-- Rim: a black barrel with a machined lip on each shoulder.
-	bolt(newPart(model, name .. "Rim", Vector3.new(width * 0.86, radius * 1.20, radius * 1.20), wheelCF, C.Component, {
+	bolt(newPart(model, name .. "Rim", Vector3.new(width * 0.86, radius * 1.20, radius * 1.20), wheelCF, C.Rim, {
 		shape = Enum.PartType.Cylinder,
 		material = Enum.Material.Metal,
 		reflectance = 0.06,
+		paint = "Rim",
 	}))
 	for _, side in { -1, 1 } do
 		bolt(newPart(
@@ -191,14 +197,16 @@ local function buildWheel(model: Model, name: string, center: Vector3, radius: n
 			name .. "Knob" .. i,
 			Vector3.new(width * 0.44, 0.17, radius * 0.30),
 			wheelCF * CFrame.Angles(a, 0, 0) * CFrame.new(offset, radius, 0),
-			C.Rubber
+			C.Rubber,
+			{ paint = "Knob" }
 		))
 		bolt(newPart(
 			model,
 			name .. "Shoulder" .. i,
 			Vector3.new(width * 0.2, 0.14, radius * 0.24),
 			wheelCF * CFrame.Angles(a + math.pi / G.TreadCount, 0, 0) * CFrame.new(-offset * 1.9, radius * 0.96, 0),
-			C.Rubber
+			C.Rubber,
+			{ paint = "Knob" }
 		))
 	end
 
@@ -695,6 +703,23 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	seat.TurnSpeed = 0
 	seat.Parent = model
 	weld(chassis, seat)
+
+	-- The frame colour is used only by frame parts, so one pass tags them all
+	-- as repaintable rather than threading an option through every call.
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") and part:GetAttribute("Paint") == nil and part.Color == C.Frame then
+			part:SetAttribute("Paint", "Frame")
+		end
+	end
+
+	local engine = Instance.new("Sound")
+	engine.Name = "Engine"
+	engine.SoundId = Config.Audio.EngineSoundId
+	engine.Looped = true
+	engine.Volume = 0
+	engine.RollOffMaxDistance = 220
+	engine.RollOffMinDistance = 12
+	engine.Parent = chassis
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "RidePrompt"

@@ -110,7 +110,7 @@ def build() -> str:
         "SpawnLocation",
         "SpawnPad",
         (12, 1, 12),
-        (0, 0.5, 0),
+        (0, 1.2, 62),
         (120, 120, 122),
         extra="""
         <bool name="Enabled">true</bool>
@@ -131,8 +131,9 @@ def build() -> str:
         [
             script_item("ModuleScript", "BikeConfig", SRC / "ReplicatedStorage" / "BikeConfig.luau"),
             script_item("ModuleScript", "BikeBuilder", SRC / "ReplicatedStorage" / "BikeBuilder.luau"),
-            script_item("ModuleScript", "CourseBuilder", SRC / "ReplicatedStorage" / "CourseBuilder.luau"),
+            script_item("ModuleScript", "WorldBuilder", SRC / "ReplicatedStorage" / "WorldBuilder.luau"),
             script_item("ModuleScript", "RiderPose", SRC / "ReplicatedStorage" / "RiderPose.luau"),
+            script_item("ModuleScript", "Ragdoll", SRC / "ReplicatedStorage" / "Ragdoll.luau"),
         ],
     )
 

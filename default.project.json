@@ -17,11 +17,14 @@
       "BikeBuilder": {
         "$path": "src/ReplicatedStorage/BikeBuilder.luau"
       },
-      "CourseBuilder": {
-        "$path": "src/ReplicatedStorage/CourseBuilder.luau"
-      },
       "RiderPose": {
         "$path": "src/ReplicatedStorage/RiderPose.luau"
+      },
+      "WorldBuilder": {
+        "$path": "src/ReplicatedStorage/WorldBuilder.luau"
+      },
+      "Ragdoll": {
+        "$path": "src/ReplicatedStorage/Ragdoll.luau"
       }
     },
     "ServerScriptService": {
