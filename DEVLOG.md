@@ -270,6 +270,41 @@ not.
 
 ---
 
+## 9. Full skill set from the uploaded repo, plus project memory
+
+**Prompt**
+
+> [uploaded ui-ux-pro-max-skill-main.zip] open it and implement it to ur claude
+> memory and tools ok
+
+**Steps taken**
+
+1. Opened the zip: it is the whole upstream repo, not just the one skill the
+   CLI installed last time. It carries **seven** skills — `ui-ux-pro-max`,
+   `ui-styling`, `design`, `design-system`, `brand`, `slides` and
+   `banner-design`.
+2. The zip's `ui-ux-pro-max` is **v2.11.0** (84 styles, 192 palettes) against
+   the CLI's **v2.2.3** (67 styles, 96 palettes), so the upload is newer and
+   richer. Replaced the installed copy rather than merging.
+3. Checked the 5.5 MB in `ui-styling` before committing binaries: 54 Google
+   Font `.ttf` files, each shipped with its OFL licence text, so fine to
+   redistribute.
+4. Installed all seven into `.claude/skills/`, stripped `__pycache__`.
+5. Wrote `CLAUDE.md` for the "memory" half — project layout, how the runtime
+   build works, the traps that have already cost a debugging round each
+   (constraint parts still collide; the rig must be released on every dismount;
+   pose writes belong on RenderStep; bike-local geometry needs `baseCF *`), how
+   verification works without Studio, and the standing agreement to log every
+   request here.
+
+**Worth knowing.** These skills target web and mobile UI stacks — React,
+Next.js, Vue, Tailwind, shadcn, SwiftUI, Flutter. None exist in this repo, so
+they will not fire on bike, physics or world code. The parts that transfer are
+the palette, typography, spacing and accessibility data, which apply to the
+Roblox HUD regardless of stack.
+
+---
+
 ## Standing notes
 
 Things flagged along the way that are still true:
