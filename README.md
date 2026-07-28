@@ -13,6 +13,25 @@ hit Play. Everything is already in there — no plugins, no assets to upload.
 
 Walk up to the bike and press **E** (or tap the *Ride* prompt) to get on.
 
+### Playing it on a phone
+
+The place file has to be published to Roblox first — that needs your account,
+so it's a manual step:
+
+1. Open `build/WheelieBeta.rbxlx` in Studio.
+2. **File → Publish to Roblox As…**, give it a name, **Create**.
+3. On the web: **Create → your game → Places → ⋯ → Configure**, then under
+   **Playability** set it to **Public** and tick **Phone** under devices.
+4. Open the Roblox app on your phone and it's under your own games.
+
+Republishing after a change is **File → Publish to Roblox** (no "As"), which
+overwrites the same place — the link stays the same.
+
+The touch HUD keeps clear of Roblox's own controls: the movement thumbstick
+owns the bottom-left corner and the jump button the bottom-right, so the
+wheelie and jump buttons sit above them on the right, the trick buttons run up
+the left edge, and reset and the paint shop sit along the top.
+
 ## Controls
 
 | | PC | Mobile |

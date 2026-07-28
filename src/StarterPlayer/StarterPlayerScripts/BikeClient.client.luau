@@ -358,6 +358,41 @@ end
 shopToggle.Activated:Connect(toggleShop)
 
 --------------------------------------------------------------------------------
+-- phone layout
+--------------------------------------------------------------------------------
+
+-- Roblox owns two corners on touch devices: the movement thumbstick sits
+-- bottom-left and the jump button bottom-right. Anything of ours in either
+-- corner is a button the player cannot press, so on a phone everything moves
+-- clear of both.
+if UserInputService.TouchEnabled then
+	meter.Position = UDim2.new(0.5, 0, 1, -122)
+	trickLabel.Position = UDim2.new(0.5, 0, 1, -174)
+
+	wheelieButton.Position = UDim2.new(1, -26, 1, -186)
+	wheelieButton.Size = UDim2.new(0, 126, 0, 126)
+
+	jumpButton.Position = UDim2.new(1, -168, 1, -186)
+	jumpButton.Size = UDim2.new(0, 100, 0, 100)
+
+	resetButton.AnchorPoint = Vector2.new(1, 0)
+	resetButton.Position = UDim2.new(1, -26, 0, 88)
+	resetButton.Size = UDim2.new(0, 100, 0, 40)
+
+	for i, trick in Config.Tricks do
+		local button = trickButtons[trick.Id]
+		if button then
+			button.AnchorPoint = Vector2.new(0, 1)
+			button.Position = UDim2.new(0, 26, 1, -252 - (i - 1) * 52)
+			button.Size = UDim2.new(0, 116, 0, 44)
+		end
+	end
+
+	shopToggle.Position = UDim2.new(0, 26, 0, 88)
+	panel.Position = UDim2.new(0, 26, 0, 136)
+end
+
+--------------------------------------------------------------------------------
 -- input
 --------------------------------------------------------------------------------
 
