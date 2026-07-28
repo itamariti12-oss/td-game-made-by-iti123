@@ -196,6 +196,11 @@ noise with nothing to upload — but they are placeholders, not a motor. Paste a
 engine-whine asset id from the Creator Store into `Audio.EngineSoundId` for the
 real thing; the pitch and volume already track wheel speed.
 
+## History
+
+Every request made on this project and what was built for it is logged in
+[DEVLOG.md](DEVLOG.md), newest at the bottom.
+
 ## Not in the beta yet
 
 More bikes, scoring, data saves, tricks beyond the wheelie.
