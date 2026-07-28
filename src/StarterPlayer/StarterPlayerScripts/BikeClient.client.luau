@@ -611,6 +611,14 @@ local function releaseCamera()
 end
 
 local function stopDriving()
+	-- Always hand the rig back. Missing this leaves the character's Animate
+	-- script disabled and its joints frozen on the last pose written, which
+	-- looks exactly like the player being stuck stiff.
+	local character = player.Character
+	if character then
+		RiderPose.Release(character)
+	end
+
 	driving = false
 	bike, chassis, frontWheel, rearWheel = nil, nil, nil, nil
 	seat, stabilizer, rearHinge, steerHinge, readout = nil, nil, nil, nil, nil
@@ -778,15 +786,19 @@ local function sendCrash(reason: string)
 	crashBike:FireServer(reason)
 end
 
-RunService.Heartbeat:Connect(function(dt)
-	-- Pose every rider we know about, ourselves included.
+-- Rider posing runs after Roblox's own character animation step. Writing
+-- Motor6D.Transform anywhere earlier risks the animator overwriting it in the
+-- same frame, which shows up as the rider not moving at all.
+RunService:BindToRenderStep("RiderPose", Enum.RenderPriority.Character.Value + 1, function(dt)
 	for who, pose in riders do
 		local character = who.Character
 		if character and character.Parent then
 			RiderPose.Update(character, pose, dt)
 		end
 	end
+end)
 
+RunService.Heartbeat:Connect(function(dt)
 	-- Engine note, for everyone in earshot rather than only the rider.
 	if engineSound and worldChassis and worldChassis.Parent then
 		local occupied = worldSeat ~= nil and worldSeat.Occupant ~= nil

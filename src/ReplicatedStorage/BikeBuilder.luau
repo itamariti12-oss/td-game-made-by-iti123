@@ -181,10 +181,10 @@ local function buildWheel(model: Model, name: string, center: Vector3, radius: n
 		bolt(newPart(
 			model,
 			name .. "Spoke" .. i,
-			Vector3.new(0.06, radius * 0.92, 0.06),
-			wheelCF * CFrame.new(lace * width * 0.22, 0, 0) * CFrame.Angles(a, 0, 0) * CFrame.new(0, radius * 0.52, 0),
+			Vector3.new(radius * 0.92, 0.06, 0.06),
+			wheelCF * CFrame.new(lace * width * 0.22, 0, 0) * CFrame.Angles(a, 0, 0) * CFrame.new(0, radius * 0.52, 0) * CFrame.Angles(0, 0, math.pi / 2),
 			C.Silver,
-			{ material = Enum.Material.Metal, reflectance = 0.2 }
+			{ shape = Enum.PartType.Cylinder, material = Enum.Material.Metal, reflectance = 0.2 }
 		))
 	end
 
@@ -251,13 +251,48 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 		return baseCF * CFrame.new(x, y, z)
 	end
 
+	-- Round tubing. A cylinder Part spins about its local X, so the tube frame
+	-- (long axis on Z) is turned a quarter turn to line the two up.
 	local function tubePart(host: BasePart, name: string, from: Vector3, to: Vector3, thickness: number, color: Color3, material: Enum.Material?): Part
 		local cf, length = tube(from, to)
-		local p = newPart(model, name, Vector3.new(thickness, thickness, length), baseCF * cf, color, {
+		local p = newPart(model, name, Vector3.new(length, thickness, thickness), baseCF * cf * CFrame.Angles(0, math.pi / 2, 0), color, {
+			shape = Enum.PartType.Cylinder,
 			material = material or Enum.Material.Metal,
 		})
 		weld(host, p)
 		return p
+	end
+
+	-- A ball at a tube junction, so the frame reads as welded rather than as
+	-- cylinders with visible flat end caps.
+	local function node(host: BasePart, name: string, at: Vector3, size: number, color: Color3)
+		weld(host, newPart(model, name, Vector3.new(size, size, size), L(at.X, at.Y, at.Z), color, {
+			shape = Enum.PartType.Ball,
+			material = Enum.Material.Metal,
+		}))
+	end
+
+	-- A curved panel swept around a wheel: fenders and huggers, instead of a
+	-- flat slab floating over the tyre.
+	local function arcPanel(host: BasePart, name: string, centre: Vector3, radius: number, fromDeg: number, toDeg: number, width: number, thickness: number, segments: number, color: Color3)
+		for i = 0, segments - 1 do
+			local t0 = math.rad(fromDeg + (toDeg - fromDeg) * (i / segments))
+			local t1 = math.rad(fromDeg + (toDeg - fromDeg) * ((i + 1) / segments))
+			local mid = (t0 + t1) * 0.5
+			local span = radius * math.abs(t1 - t0) * 1.12
+			local radial = Vector3.new(0, math.cos(mid), math.sin(mid))
+			local pos = centre + radial * radius
+			weld(
+				host,
+				newPart(
+					model,
+					name .. i,
+					Vector3.new(width, thickness, span),
+					baseCF * CFrame.fromMatrix(pos, Vector3.new(1, 0, 0), radial),
+					color
+				)
+			)
+		end
 	end
 
 	----------------------------------------------------------------------------
@@ -292,8 +327,22 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 		material = Enum.Material.DiamondPlate,
 	}))
 	onFrame(newPart(model, "ChargePort", Vector3.new(0.3, 0.3, 0.22), L(0.72, 2.9, 1.35), C.Frame, {
+		shape = Enum.PartType.Cylinder,
 		material = Enum.Material.Metal,
 	}))
+	-- Rounded corners down the pack, so it is not a bare box.
+	for _, sx in { -1, 1 } do
+		for _, sz in { -1, 1 } do
+			onFrame(newPart(
+				model,
+				"BatteryEdge" .. (sx < 0 and "L" or "R") .. (sz < 0 and "F" or "B"),
+				Vector3.new(2.05, 0.3, 0.3),
+				L(sx * 0.71, 2.45, 0.35 + sz * 1.22) * CFrame.Angles(0, 0, math.pi / 2),
+				C.Component,
+				{ shape = Enum.PartType.Cylinder, material = Enum.Material.Metal }
+			))
+		end
+	end
 	-- Cooling fins down each flank of the pack.
 	for i = 0, 4 do
 		for _, side in { -1, 1 } do
@@ -315,6 +364,11 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	tubePart(chassis, "CradleTube", Vector3.new(0, 1.72, -0.55), Vector3.new(0, 1.80, 1.00), 0.32, C.Frame)
 	tubePart(chassis, "HeadGusset", G.SteerHead, Vector3.new(0, 2.40, -2.60), 0.44, C.Frame)
 	tubePart(chassis, "HeadStay", Vector3.new(0, 3.20, -2.75), Vector3.new(0, 2.55, -2.10), 0.24, C.Frame)
+
+	node(chassis, "NodeHead", G.SteerHead, 0.5, C.Frame)
+	node(chassis, "NodeSeat", Vector3.new(0, 3.55, -0.30), 0.4, C.Frame)
+	node(chassis, "NodeCradle", Vector3.new(0, 1.72, -0.55), 0.42, C.Frame)
+	node(chassis, "NodeDown", Vector3.new(0, 2.40, -2.60), 0.46, C.Frame)
 
 	for _, side in { -1, 1 } do
 		local tag = side < 0 and "L" or "R"
@@ -339,7 +393,8 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	local shockTop = Vector3.new(0, 3.30, 1.05)
 	local shockBottom = Vector3.new(0, 1.95, 2.20)
 	local shockCF, shockLen = tube(shockTop, shockBottom)
-	onFrame(newPart(model, "ShockBody", Vector3.new(0.34, 0.34, shockLen), baseCF * shockCF, C.DarkMetal, {
+	onFrame(newPart(model, "ShockBody", Vector3.new(shockLen, 0.34, 0.34), baseCF * shockCF * CFrame.Angles(0, math.pi / 2, 0), C.DarkMetal, {
+		shape = Enum.PartType.Cylinder,
 		material = Enum.Material.Metal,
 	}))
 	onFrame(newPart(model, "ShockReservoir", Vector3.new(0.28, 0.28, 0.7), baseCF * tube(Vector3.new(0.3, 3.05, 1.35), Vector3.new(0.3, 2.65, 1.70)), C.Gold, {
@@ -457,12 +512,26 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	onFrame(newPart(model, "SeatNose", Vector3.new(0.9, 0.24, 0.8), L(0, 3.78, -0.35) * CFrame.Angles(math.rad(-9), 0, 0), C.Component, {
 		material = Enum.Material.Fabric,
 	}))
+	-- Rolled edges along the seat, and a rounded nose.
+	for _, side in { -1, 1 } do
+		onFrame(newPart(model, "SeatEdge" .. (side < 0 and "L" or "R"), Vector3.new(2.9, 0.26, 0.26), L(side * 0.55, 3.82, 1.05) * CFrame.Angles(math.rad(-3), 0, 0) * CFrame.Angles(0, math.pi / 2, 0), C.Component, {
+			shape = Enum.PartType.Cylinder,
+			material = Enum.Material.Fabric,
+		}))
+	end
+	onFrame(newPart(model, "SeatTip", Vector3.new(1.1, 0.26, 0.26), L(0, 3.76, -0.72), C.Component, {
+		shape = Enum.PartType.Cylinder,
+		material = Enum.Material.Fabric,
+	}))
 	onFrame(newPart(model, "SeatHump", Vector3.new(1.05, 0.3, 0.8), L(0, 4.0, 2.3) * CFrame.Angles(math.rad(-14), 0, 0), C.Component, {
 		material = Enum.Material.Fabric,
 	}))
 
 	-- Tail.
 	onFrame(newPart(model, "RearFender", Vector3.new(1.15, 0.2, 2.0), L(0, 3.98, 2.75) * CFrame.Angles(math.rad(-12), 0, 0), C.Frame))
+	onFrame(newPart(model, "RearFenderTip", Vector3.new(1.15, 0.2, 0.2), L(0, 4.18, 3.72), C.Frame, {
+		shape = Enum.PartType.Cylinder,
+	}))
 	onFrame(newPart(model, "Taillight", Vector3.new(0.48, 0.22, 0.14), L(0, 3.92, 3.60), C.Taillight, {
 		material = Enum.Material.Neon,
 	}))
@@ -500,7 +569,7 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	}))
 
 	-- Hugger, tucked in close over the rear tyre.
-	onFrame(newPart(model, "RearHugger", Vector3.new(1.05, 0.14, 1.5), L(0, 3.25, 2.55) * CFrame.Angles(math.rad(-18), 0, 0), C.Component))
+	arcPanel(chassis, "RearHugger", G.RearAxle, G.RearRadius + 0.42, -14, 62, 1.05, 0.14, 6, C.Component)
 
 	-- Chain roller on the swingarm.
 	onFrame(newPart(model, "ChainRoller", Vector3.new(0.22, 0.44, 0.44), L(0.66, 2.28, 1.35), C.Component, {
@@ -524,7 +593,8 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 
 	local function columnTube(name: string, from: Vector3, to: Vector3, thickness: number, color: Color3): Part
 		local cf, length = tube(from, to)
-		local p = newPart(model, name, Vector3.new(thickness, thickness, length), baseCF * cf, color, {
+		local p = newPart(model, name, Vector3.new(length, thickness, thickness), baseCF * cf * CFrame.Angles(0, math.pi / 2, 0), color, {
+			shape = Enum.PartType.Cylinder,
 			material = Enum.Material.Metal,
 		})
 		weld(column, p)
@@ -587,13 +657,18 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 		material = Enum.Material.Metal,
 	}))
 	onColumn(newPart(model, "Handlebar", Vector3.new(3.6, 0.2, 0.2), L(0, 4.36, -2.54), C.Component, {
+		shape = Enum.PartType.Cylinder,
 		material = Enum.Material.Metal,
 	}))
-	onColumn(newPart(model, "BarPad", Vector3.new(1.1, 0.34, 0.34), L(0, 4.36, -2.54), C.Frame))
+	onColumn(newPart(model, "BarPad", Vector3.new(1.1, 0.34, 0.34), L(0, 4.36, -2.54), C.Frame, {
+		shape = Enum.PartType.Cylinder,
+	}))
 
 	for _, side in { -1, 1 } do
 		local tag = side < 0 and "L" or "R"
-		onColumn(newPart(model, "Grip" .. tag, Vector3.new(0.86, 0.26, 0.26), L(side * 1.44, 4.36, -2.54), C.Component))
+		onColumn(newPart(model, "Grip" .. tag, Vector3.new(0.86, 0.26, 0.26), L(side * 1.44, 4.36, -2.54), C.Component, {
+			shape = Enum.PartType.Cylinder,
+		}))
 		for i = 0, 3 do
 			onColumn(newPart(model, "GripRib" .. tag .. i, Vector3.new(0.08, 0.3, 0.3), L(side * (1.16 + i * 0.19), 4.36, -2.54), C.Component, {
 				shape = Enum.PartType.Cylinder,
@@ -638,10 +713,11 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	onColumn(newPart(model, "HeadlightShell", Vector3.new(1.0, 0.6, 0.26), L(0, 3.96, -3.22) * raked, C.Component, {
 		material = Enum.Material.Metal,
 	}))
-	onColumn(newPart(model, "Headlight", Vector3.new(0.84, 0.42, 0.16), L(0, 3.96, -3.34) * raked, C.Headlight, {
+	onColumn(newPart(model, "Headlight", Vector3.new(0.16, 0.78, 0.78), L(0, 3.96, -3.34) * raked * CFrame.Angles(0, math.pi / 2, 0), C.Headlight, {
+		shape = Enum.PartType.Cylinder,
 		material = Enum.Material.Neon,
 	}))
-	onColumn(newPart(model, "FrontFender", Vector3.new(1.2, 0.18, 2.0), L(0, 3.06, -3.78) * CFrame.Angles(math.rad(12), 0, 0), C.Frame))
+	arcPanel(column, "FrontFender", G.FrontAxle, G.FrontRadius + 0.55, -58, 34, 1.2, 0.16, 7, C.Frame)
 	onColumn(newPart(model, "FenderStay", Vector3.new(0.9, 0.12, 0.5), L(0, 3.02, -3.24), C.Frame))
 	onColumn(newPart(model, "HeadlightBrace", Vector3.new(0.7, 0.14, 0.5), L(0, 4.22, -3.06) * raked, C.Component, {
 		material = Enum.Material.Metal,

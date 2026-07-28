@@ -136,14 +136,17 @@ local OFFSETS: { [string]: Offset } = {
 	CanCan = { Lift = R.StandLift * 0.9, Forward = R.StandForward * 0.6, Pitch = -5 },
 }
 
--- R6 has one joint per limb with pre-rotated C0s, so it only gets the torso
--- lean; combined with the seat lift that still reads as coming up off the bike.
-local R6_LEAN: { [string]: number } = {
-	Seated = 0,
-	Stand = -18,
-	NoHander = -10,
-	Superman = -34,
-	CanCan = -14,
+-- R6 has one joint per limb instead of two, and its C0s carry rotations, so
+-- the poses above are mapped onto whatever joint owns that limb. The
+-- conjugation in applyJoint handles the rotated C0s, so the same pose data
+-- drives both rigs.
+local R6_MAP: { [string]: string } = {
+	Waist = "RootJoint",
+	Neck = "Neck",
+	LeftShoulder = "Left Shoulder",
+	RightShoulder = "Right Shoulder",
+	LeftHip = "Left Hip",
+	RightHip = "Right Hip",
 }
 
 type State = {
@@ -158,6 +161,14 @@ type State = {
 }
 
 local states: { [Model]: State } = {}
+
+-- Poses are written in character space, but Transform is applied in the
+-- joint's own frame. For R15 every C0 is rotation-free so the two are the
+-- same; for R6 they are not, so the rotation is conjugated into joint space.
+local function applyJoint(joint: Motor6D, characterSpace: CFrame)
+	local c0 = joint.C0.Rotation
+	joint.Transform = c0:Inverse() * characterSpace * c0
+end
 
 local function collect(character: Model): { [string]: Motor6D }
 	local joints: { [string]: Motor6D } = {}
@@ -221,24 +232,17 @@ function RiderPose.Update(character: Model, trick: string?, dt: number)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local isR15 = humanoid ~= nil and humanoid.RigType == Enum.HumanoidRigType.R15
 
-	if isR15 then
-		for name, targetCF in pose do
-			local joint = state.joints[name]
-			if joint and joint.Parent then
-				local current = state.rendered[name] or CFrame.identity
-				local nextCF = current:Lerp(targetCF, blend)
-				state.rendered[name] = nextCF
-				joint.Transform = nextCF
-			end
+	for name, targetCF in pose do
+		local jointName = name
+		if not isR15 then
+			jointName = R6_MAP[name]
 		end
-	else
-		local rootJoint = state.joints["RootJoint"]
-		if rootJoint and rootJoint.Parent then
-			local target = ang(R6_LEAN[key] or 0, 0, 0)
-			local current = state.rendered["RootJoint"] or CFrame.identity
-			local nextCF = current:Lerp(target, blend)
-			state.rendered["RootJoint"] = nextCF
-			rootJoint.Transform = nextCF
+		local joint = jointName and state.joints[jointName]
+		if joint and joint.Parent then
+			local current = state.rendered[jointName] or CFrame.identity
+			local nextCF = current:Lerp(targetCF, blend)
+			state.rendered[jointName] = nextCF
+			applyJoint(joint, nextCF)
 		end
 	end
 

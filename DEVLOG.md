@@ -193,6 +193,50 @@ every request from here on.
 
 ---
 
+## 7. Rider was frozen; smoothing the bike
+
+**Prompt**
+
+> ok so listen when im on the bike im stiff im not moving my body for the
+> tricks and make a button for a trick when u wheelie like this but whem u just
+> normal wheelieng u are sitting ok and dont make the ebikes oyu of blocks make
+> it like us blender to do the clours and the shape and make it really look lik
+> it then put it into the game ok'
+
+**Steps taken**
+
+1. **Found why the rider was stiff.** `stopDriving()` cleared all the driving
+   state but never called `RiderPose.Release`. On the normal dismount path that
+   left the character's `Animate` script disabled forever and its joints frozen
+   on the last pose written — so the rider stopped animating entirely, on the
+   bike and off it. Release is now called on every dismount path.
+2. Moved pose writing from `Heartbeat` to `BindToRenderStep` at
+   `Character + 1` priority, so it lands after Roblox's own character animation
+   step instead of racing it.
+3. Made posing work on R6 rigs, not just R15. Poses are written in character
+   space and conjugated into each joint's own frame by its `C0` rotation, so
+   one set of pose data now drives both rigs.
+4. Normal wheelie stays seated and `E` is the stand-up trick — already the
+   behaviour, and it should now actually be visible.
+5. Smoothing pass on the bike: every frame tube is round tubing rather than a
+   square-section box, with balls at the junctions so the welds read; bars,
+   grips, bar pad, shock body, spokes and the headlight lens are round; fenders
+   sweep around the wheels as arcs instead of hovering as flat slabs; the
+   battery pack and seat get rolled edges.
+
+**Not done, and why.** A Blender-authored mesh is not possible from here:
+Blender is not installed, and a mesh has to be uploaded to Roblox as an asset,
+which needs the account. Offered instead to generate an importable `.obj` +
+`.mtl` that Studio's **Import 3D** can bring in locally — that would allow
+genuinely smooth surfaces, at the cost of losing the runtime paint shop and
+config-driven tuning.
+
+**Verification.** Shape census before and after; fender arcs confirmed to clear
+both tyres by 0.42–0.55 studs; steering and rear hinges still aligned to six
+decimals; wheels still exactly on the ground at spawn.
+
+---
+
 ## Standing notes
 
 Things flagged along the way that are still true:
