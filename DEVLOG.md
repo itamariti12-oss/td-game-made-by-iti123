@@ -237,6 +237,39 @@ decimals; wheels still exactly on the ground at spawn.
 
 ---
 
+## 8. Installed the UI/UX Pro Max skill
+
+**Prompt**
+
+> $ uipro init --ai claude
+>
+> install this
+
+**Steps taken**
+
+1. `uipro` is not a package — the npm package is **`uipro-cli`**, which
+   provides a `uipro` binary. Checked npm and PyPI before running anything.
+2. Pulled the tarball and read it before executing: no install hooks (only
+   `build` / `dev` / `prepublishOnly`, none of which run on install), four
+   common dependencies, and it writes a skill rather than touching project
+   code.
+3. Ran `npx uipro-cli@2.2.3 init --ai claude`. It created
+   `.claude/skills/ui-ux-pro-max/` — a `SKILL.md`, CSV design data, and three
+   Python search scripts.
+4. Deleted the `__pycache__` bytecode the package ships and added a
+   `.claude/.gitignore` for it. Smoke-tested `search.py`.
+5. Committed it. This container is ephemeral, so an uncommitted install would
+   have disappeared with the session.
+
+**Worth knowing.** The skill is web and mobile UI design — React, Next.js,
+Vue, Tailwind, shadcn, SwiftUI, Flutter. None of those exist in this repo,
+which is Luau, so it will not fire on the bike or physics work. The parts that
+could still earn their keep are the palette, typography, spacing and
+accessibility data, which apply to the Roblox HUD even though the stack does
+not.
+
+---
+
 ## Standing notes
 
 Things flagged along the way that are still true:
