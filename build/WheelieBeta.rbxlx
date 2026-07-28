@@ -146,6 +146,12 @@ BikeConfig.Handling = {
 	MaxHeadingLag = 0.40, -- radians the steering target may lead the chassis
 	StabilizerTorque = 4e6,
 	StabilizerResponsiveness = 45,
+
+	-- A bike banks into a corner. Roll is still fully controlled -- it just
+	-- follows the steering instead of being pinned at zero.
+	MaxLean = 30, -- degrees of bank at full lock and full speed
+	LeanSpeed = 7, -- how quickly it rolls in and out of the bank
+	LeanWheelieScale = 0.35, -- you cannot lean much when up on the back wheel
 }
 
 -- The wheelie is a real balance problem, not a fixed angle. The bike's pitch
@@ -171,7 +177,15 @@ BikeConfig.Wheelie = {
 	AirGravityScale = 0.12, -- gravity barely acts on pitch while airborne
 
 	TurnPenalty = 0.45, -- fraction of steering lost at full lift
-	StandThreshold = 0.4, -- fraction of BalanceAngle before the rider stands up
+}
+
+-- Tricks. Each is a rider pose held while its key is down; poses live in
+-- RiderPose. Air-only ones refuse to fire with a wheel on the ground.
+BikeConfig.Tricks = {
+	{ Id = "Stand", Name = "STAND UP", Key = "E", AirOnly = false },
+	{ Id = "NoHander", Name = "NO-HANDER", Key = "F", AirOnly = false },
+	{ Id = "Superman", Name = "SUPERMAN", Key = "G", AirOnly = true },
+	{ Id = "CanCan", Name = "CAN-CAN", Key = "H", AirOnly = true },
 }
 
 BikeConfig.Jump = {
@@ -538,6 +552,10 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 		return p
 	end
 
+	-- Parts that belong to the steering column but are convenient to describe
+	-- alongside their chassis-side neighbours; welded once the column exists.
+	local onColumnLater: { { any } } = {}
+
 	-- Battery pack: the big swappable box that fills the frame triangle.
 	onFrame(newPart(model, "BatteryBox", Vector3.new(1.42, 2.05, 2.45), L(0, 2.45, 0.35), C.Component, {
 		material = Enum.Material.Metal,
@@ -728,6 +746,42 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	-- Kickstand, folded up along the swingarm.
 	tubePart(chassis, "Kickstand", Vector3.new(-0.62, 1.95, 1.25), Vector3.new(-0.72, 1.60, 2.35), 0.16, C.Component)
 
+	-- Shrouds: the plastic panels that sweep from the steering head back over
+	-- the battery and into the seat. They are what gives these bikes their
+	-- silhouette, more than any single component does.
+	for _, side in { -1, 1 } do
+		local tag = side < 0 and "L" or "R"
+		onFrame(newPart(model, "ShroudFront" .. tag, Vector3.new(0.14, 1.5, 1.9), L(side * 0.62, 3.02, -1.85) * CFrame.Angles(0, 0, side * math.rad(9)) * CFrame.Angles(math.rad(-10), 0, 0), C.Frame))
+		onFrame(newPart(model, "ShroudRear" .. tag, Vector3.new(0.14, 1.25, 1.6), L(side * 0.76, 3.16, -0.45) * CFrame.Angles(0, 0, side * math.rad(4)) * CFrame.Angles(math.rad(-4), 0, 0), C.Frame))
+		onFrame(newPart(model, "ShroudVent" .. tag, Vector3.new(0.1, 0.5, 1.0), L(side * 0.70, 2.72, -1.6) * CFrame.Angles(0, 0, side * math.rad(9)), C.Component))
+		-- Fork guard on the lower leg.
+		onColumnLater[#onColumnLater + 1] = { "ForkGuard" .. tag, Vector3.new(0.12, 1.0, 0.5), L(side * 0.70, 2.35, -3.5) * raked }
+	end
+
+	-- Bash plate under the motor, and the linkage the shock pushes on.
+	onFrame(newPart(model, "BashPlate", Vector3.new(1.24, 0.16, 2.0), L(0, 1.52, 0.45) * CFrame.Angles(math.rad(-6), 0, 0), C.Silver, {
+		material = Enum.Material.DiamondPlate,
+	}))
+	tubePart(chassis, "LinkageArm", Vector3.new(0, 1.95, 2.20), Vector3.new(0, 1.72, 1.55), 0.26, C.DarkMetal)
+	tubePart(chassis, "LinkageRod", Vector3.new(0, 1.72, 1.55), Vector3.new(0, 1.98, 1.05), 0.18, C.Silver)
+
+	-- Rear brake pedal off the right peg, with its master cylinder.
+	tubePart(chassis, "BrakePedalArm", Vector3.new(0.86, 1.88, 0.95), Vector3.new(0.98, 1.72, -0.35), 0.14, C.Silver)
+	onFrame(newPart(model, "BrakePedalPad", Vector3.new(0.3, 0.1, 0.5), L(1.0, 1.70, -0.5), C.Silver, {
+		material = Enum.Material.DiamondPlate,
+	}))
+	onFrame(newPart(model, "MasterCylinder", Vector3.new(0.26, 0.6, 0.26), L(0.86, 2.25, 0.6), C.DarkMetal, {
+		material = Enum.Material.Metal,
+	}))
+
+	-- Hugger, tucked in close over the rear tyre.
+	onFrame(newPart(model, "RearHugger", Vector3.new(1.05, 0.14, 1.5), L(0, 3.25, 2.55) * CFrame.Angles(math.rad(-18), 0, 0), C.Component))
+
+	-- Chain roller on the swingarm.
+	onFrame(newPart(model, "ChainRoller", Vector3.new(0.22, 0.44, 0.44), L(0.66, 2.28, 1.35), C.Component, {
+		shape = Enum.PartType.Cylinder,
+	}))
+
 	----------------------------------------------------------------------------
 	-- steering column (everything that turns with the bars)
 	----------------------------------------------------------------------------
@@ -864,6 +918,13 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	}))
 	onColumn(newPart(model, "FrontFender", Vector3.new(1.2, 0.18, 2.0), L(0, 3.06, -3.78) * CFrame.Angles(math.rad(12), 0, 0), C.Frame))
 	onColumn(newPart(model, "FenderStay", Vector3.new(0.9, 0.12, 0.5), L(0, 3.02, -3.24), C.Frame))
+	onColumn(newPart(model, "HeadlightBrace", Vector3.new(0.7, 0.14, 0.5), L(0, 4.22, -3.06) * raked, C.Component, {
+		material = Enum.Material.Metal,
+	}))
+
+	for _, spec in onColumnLater do
+		onColumn(newPart(model, spec[1], spec[2], spec[3], C.Component, { material = Enum.Material.Metal }))
+	end
 
 	----------------------------------------------------------------------------
 	-- wheels + joints
@@ -881,6 +942,19 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 		{ shape = Enum.PartType.Cylinder, material = Enum.Material.Metal }
 	)
 	weld(rearWheel, sprocket)
+
+	for i = 1, 18 do
+		local a = (i / 18) * math.pi * 2
+		local tooth = newPart(
+			model,
+			"SprocketTooth" .. i,
+			Vector3.new(0.12, 0.18, 0.14),
+			baseCF * CFrame.new(G.RearAxle) * CFrame.new(chainX, 0, 0) * CFrame.Angles(a, 0, 0) * CFrame.new(0, rearSprocketR, 0),
+			C.Gold,
+			{ material = Enum.Material.Metal }
+		)
+		weld(rearWheel, tooth)
+	end
 
 	-- Parts joined by constraints still collide, so the three colliding
 	-- bodies are told explicitly not to touch each other.
@@ -1276,17 +1350,16 @@ return WorldBuilder
         <bool name="Disabled">false</bool>
         <ProtectedString name="Source"><![CDATA[--!strict
 -- RiderPose
--- The stand-up-on-the-pegs animation, built the same way the bike is: in code,
+-- Every rider animation in the game, built the same way the bike is: in code,
 -- at runtime. No uploaded animation assets.
 --
 -- Roblox animations are just Motor6D.Transform values written every frame, so
 -- that is exactly what this does. Every client runs it for every rider, which
 -- is how a normal animation would replicate anyway.
 --
--- Two poses, crossfaded by `alpha`:
---   SEATED   -- sat down, knees up on the pegs, leaning into the bars
---   STANDING -- up off the seat, legs almost straight, chest over the bars,
---               the pose in the wheelie reference photo
+-- Poses are absolute, not additive. Whatever is currently on screen is eased
+-- toward the active pose each frame, so switching between any two tricks --
+-- or dropping back to seated -- blends smoothly with no bookkeeping.
 
 local Config = require(script.Parent.BikeConfig)
 
@@ -1295,66 +1368,148 @@ local RiderPose = {}
 local R = Config.Rider
 
 -- Every R15 joint's C0/C1 is rotation-free in the rest pose, so a Transform
--- rotation acts in character space: +X rotation swings a downward-pointing
--- limb forwards, and rotating about Z swings it out to the side.
+-- rotation acts in character space:
+--   +X swings a downward-pointing limb FORWARD, -X swings it back
+--   -X on the waist leans the chest forward
+--   +Z on a shoulder/hip swings that limb toward the rider's right
 local function ang(x: number, y: number, z: number): CFrame
 	return CFrame.Angles(math.rad(x), math.rad(y), math.rad(z))
 end
 
--- side is -1 for left, +1 for right, so one table describes both limbs.
-local function poseR15(standing: boolean): { [string]: CFrame }
-	if standing then
-		return {
-			Waist = ang(-40, 0, 0),
-			Neck = ang(28, 0, 0),
-			LeftHip = ang(14, 0, 7),
-			RightHip = ang(14, 0, -7),
-			LeftKnee = ang(-24, 0, 0),
-			RightKnee = ang(-24, 0, 0),
-			LeftAnkle = ang(12, 0, 0),
-			RightAnkle = ang(12, 0, 0),
-			LeftShoulder = ang(70, 0, 9),
-			RightShoulder = ang(70, 0, -9),
-			LeftElbow = ang(-12, 0, 0),
-			RightElbow = ang(-12, 0, 0),
-			LeftWrist = ang(0, 0, 0),
-			RightWrist = ang(0, 0, 0),
-		}
-	end
-	return {
-		Waist = ang(-26, 0, 0),
-		Neck = ang(16, 0, 0),
-		LeftHip = ang(70, 0, 9),
-		RightHip = ang(70, 0, -9),
-		LeftKnee = ang(-84, 0, 0),
-		RightKnee = ang(-84, 0, 0),
-		LeftAnkle = ang(18, 0, 0),
-		RightAnkle = ang(18, 0, 0),
-		LeftShoulder = ang(56, 0, 13),
-		RightShoulder = ang(56, 0, -13),
-		LeftElbow = ang(-24, 0, 0),
-		RightElbow = ang(-24, 0, 0),
-		LeftWrist = ang(6, 0, 0),
-		RightWrist = ang(6, 0, 0),
-	}
-end
+type Pose = { [string]: CFrame }
+type Offset = { Lift: number, Forward: number, Pitch: number }
 
--- R6 has one joint per limb with pre-rotated C0s, so it gets a simpler
--- treatment: lean the whole body and let the seat lift do the talking.
-local function poseR6(standing: boolean): { [string]: CFrame }
-	if standing then
-		return { RootJoint = ang(0, 0, 0), Neck = ang(0, 0, 0) }
-	end
-	return { RootJoint = ang(0, 0, 0), Neck = ang(0, 0, 0) }
-end
+-- Sat down and riding: knees up on the pegs, leaning into the bars.
+local SEATED: Pose = {
+	Waist = ang(-26, 0, 0),
+	Neck = ang(16, 0, 0),
+	LeftHip = ang(70, 0, 9),
+	RightHip = ang(70, 0, -9),
+	LeftKnee = ang(-84, 0, 0),
+	RightKnee = ang(-84, 0, 0),
+	LeftAnkle = ang(18, 0, 0),
+	RightAnkle = ang(18, 0, 0),
+	LeftShoulder = ang(56, 0, 13),
+	RightShoulder = ang(56, 0, -13),
+	LeftElbow = ang(-24, 0, 0),
+	RightElbow = ang(-24, 0, 0),
+	LeftWrist = ang(6, 0, 0),
+	RightWrist = ang(6, 0, 0),
+}
 
-local SEATED_R15 = poseR15(false)
-local STANDING_R15 = poseR15(true)
+-- Up off the seat, on the pegs, chest over the bars.
+local STAND: Pose = {
+	Waist = ang(-40, 0, 0),
+	Neck = ang(28, 0, 0),
+	LeftHip = ang(14, 0, 7),
+	RightHip = ang(14, 0, -7),
+	LeftKnee = ang(-24, 0, 0),
+	RightKnee = ang(-24, 0, 0),
+	LeftAnkle = ang(12, 0, 0),
+	RightAnkle = ang(12, 0, 0),
+	LeftShoulder = ang(70, 0, 9),
+	RightShoulder = ang(70, 0, -9),
+	LeftElbow = ang(-12, 0, 0),
+	RightElbow = ang(-12, 0, 0),
+	LeftWrist = ang(0, 0, 0),
+	RightWrist = ang(0, 0, 0),
+}
 
--- Per-character blend state, so a rider who leaves mid-blend cleans up.
-local states: { [Model]: { alpha: number, joints: { [string]: Motor6D }, seatWeld: Weld?, baseC0: CFrame?, animate: LocalScript? } } = {}
+-- Hands off the bars, arms thrown out wide.
+local NO_HANDER: Pose = {
+	Waist = ang(-14, 0, 0),
+	Neck = ang(6, 0, 0),
+	LeftHip = ang(26, 0, 8),
+	RightHip = ang(26, 0, -8),
+	LeftKnee = ang(-38, 0, 0),
+	RightKnee = ang(-38, 0, 0),
+	LeftAnkle = ang(14, 0, 0),
+	RightAnkle = ang(14, 0, 0),
+	LeftShoulder = ang(12, 0, -78),
+	RightShoulder = ang(12, 0, 78),
+	LeftElbow = ang(-8, 0, 0),
+	RightElbow = ang(-8, 0, 0),
+	LeftWrist = ang(0, 0, 0),
+	RightWrist = ang(0, 0, 0),
+}
 
-local function collect(character: Model)
+-- Legs kicked straight out behind, flat over the bike.
+local SUPERMAN: Pose = {
+	Waist = ang(-56, 0, 0),
+	Neck = ang(46, 0, 0),
+	LeftHip = ang(-74, 0, 10),
+	RightHip = ang(-74, 0, -10),
+	LeftKnee = ang(-6, 0, 0),
+	RightKnee = ang(-6, 0, 0),
+	LeftAnkle = ang(-16, 0, 0),
+	RightAnkle = ang(-16, 0, 0),
+	LeftShoulder = ang(78, 0, 6),
+	RightShoulder = ang(78, 0, -6),
+	LeftElbow = ang(-4, 0, 0),
+	RightElbow = ang(-4, 0, 0),
+	LeftWrist = ang(0, 0, 0),
+	RightWrist = ang(0, 0, 0),
+}
+
+-- Right leg swung across the bike, hands still on the bars.
+local CAN_CAN: Pose = {
+	Waist = ang(-22, 0, 0),
+	Neck = ang(14, 0, 0),
+	LeftHip = ang(64, 0, 8),
+	RightHip = ang(46, 0, -66),
+	LeftKnee = ang(-78, 0, 0),
+	RightKnee = ang(-52, 0, 0),
+	LeftAnkle = ang(16, 0, 0),
+	RightAnkle = ang(6, 0, 0),
+	LeftShoulder = ang(60, 0, 11),
+	RightShoulder = ang(60, 0, -11),
+	LeftElbow = ang(-20, 0, 0),
+	RightElbow = ang(-20, 0, 0),
+	LeftWrist = ang(4, 0, 0),
+	RightWrist = ang(4, 0, 0),
+}
+
+local POSES: { [string]: Pose } = {
+	Seated = SEATED,
+	Stand = STAND,
+	NoHander = NO_HANDER,
+	Superman = SUPERMAN,
+	CanCan = CAN_CAN,
+}
+
+-- How far the rider rises off the seat and leans forward for each pose.
+local OFFSETS: { [string]: Offset } = {
+	Seated = { Lift = 0, Forward = 0, Pitch = 0 },
+	Stand = { Lift = R.StandLift, Forward = R.StandForward, Pitch = R.StandPitch },
+	NoHander = { Lift = R.StandLift * 0.8, Forward = R.StandForward * 0.5, Pitch = -4 },
+	Superman = { Lift = R.StandLift * 1.3, Forward = R.StandForward * 1.7, Pitch = -16 },
+	CanCan = { Lift = R.StandLift * 0.9, Forward = R.StandForward * 0.6, Pitch = -5 },
+}
+
+-- R6 has one joint per limb with pre-rotated C0s, so it only gets the torso
+-- lean; combined with the seat lift that still reads as coming up off the bike.
+local R6_LEAN: { [string]: number } = {
+	Seated = 0,
+	Stand = -18,
+	NoHander = -10,
+	Superman = -34,
+	CanCan = -14,
+}
+
+type State = {
+	joints: { [string]: Motor6D },
+	rendered: { [string]: CFrame },
+	lift: number,
+	forward: number,
+	pitch: number,
+	seatWeld: Weld?,
+	baseC0: CFrame?,
+	animate: LocalScript?,
+}
+
+local states: { [Model]: State } = {}
+
+local function collect(character: Model): { [string]: Motor6D }
 	local joints: { [string]: Motor6D } = {}
 	for _, d in character:GetDescendants() do
 		if d:IsA("Motor6D") then
@@ -1380,8 +1535,9 @@ end
 
 --------------------------------------------------------------------------------
 
--- Call every frame while the character is riding.
-function RiderPose.Update(character: Model, standing: boolean, dt: number)
+-- Call every frame while the character is riding. `trick` is a key of POSES,
+-- or nil for the ordinary seated riding pose.
+function RiderPose.Update(character: Model, trick: string?, dt: number)
 	local state = states[character]
 	if not state then
 		-- Take the rig over: the default sit animation would fight us for the
@@ -1395,8 +1551,11 @@ function RiderPose.Update(character: Model, standing: boolean, dt: number)
 		stopAnimator(character)
 
 		state = {
-			alpha = 0,
 			joints = collect(character),
+			rendered = {},
+			lift = 0,
+			forward = 0,
+			pitch = 0,
 			seatWeld = nil,
 			baseC0 = nil,
 			animate = animate :: LocalScript?,
@@ -1404,12 +1563,41 @@ function RiderPose.Update(character: Model, standing: boolean, dt: number)
 		states[character] = state
 	end
 
-	local target = standing and 1 or 0
-	state.alpha += math.clamp(target - state.alpha, -R.BlendSpeed * dt, R.BlendSpeed * dt)
-	local alpha = state.alpha
+	local key = (trick ~= nil and POSES[trick] ~= nil) and trick or "Seated"
+	local pose = POSES[key]
+	local offset = OFFSETS[key]
+	local blend = 1 - math.exp(-R.BlendSpeed * dt)
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local isR15 = humanoid ~= nil and humanoid.RigType == Enum.HumanoidRigType.R15
+
+	if isR15 then
+		for name, targetCF in pose do
+			local joint = state.joints[name]
+			if joint and joint.Parent then
+				local current = state.rendered[name] or CFrame.identity
+				local nextCF = current:Lerp(targetCF, blend)
+				state.rendered[name] = nextCF
+				joint.Transform = nextCF
+			end
+		end
+	else
+		local rootJoint = state.joints["RootJoint"]
+		if rootJoint and rootJoint.Parent then
+			local target = ang(R6_LEAN[key] or 0, 0, 0)
+			local current = state.rendered["RootJoint"] or CFrame.identity
+			local nextCF = current:Lerp(target, blend)
+			state.rendered["RootJoint"] = nextCF
+			rootJoint.Transform = nextCF
+		end
+	end
 
 	-- Lift the rider off the seat. The seat weld's C0 is axis-aligned with the
 	-- seat, so this offset is in bike space and tips with the bike.
+	state.lift += (offset.Lift - state.lift) * blend
+	state.forward += (offset.Forward - state.forward) * blend
+	state.pitch += (offset.Pitch - state.pitch) * blend
+
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if root and root:IsA("BasePart") then
 		local seatWeld = root:FindFirstChild("SeatWeld")
@@ -1421,29 +1609,10 @@ function RiderPose.Update(character: Model, standing: boolean, dt: number)
 			local base = state.baseC0
 			if base then
 				seatWeld.C0 = base
-					* CFrame.new(0, R.StandLift * alpha, -R.StandForward * alpha)
-					* CFrame.Angles(math.rad(R.StandPitch) * alpha, 0, 0)
+					* CFrame.new(0, state.lift, -state.forward)
+					* CFrame.Angles(math.rad(state.pitch), 0, 0)
 			end
 		end
-	end
-
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local isR15 = humanoid ~= nil and humanoid.RigType == Enum.HumanoidRigType.R15
-
-	if isR15 then
-		for name, seatedCF in SEATED_R15 do
-			local joint = state.joints[name]
-			if joint and joint.Parent then
-				joint.Transform = seatedCF:Lerp(STANDING_R15[name], alpha)
-			end
-		end
-	else
-		-- R6: lean the torso, which with the seat lift still reads as standing.
-		local rootJoint = state.joints["RootJoint"]
-		if rootJoint and rootJoint.Parent then
-			rootJoint.Transform = ang(0, 0, 0):Lerp(ang(-18, 0, 0), alpha)
-		end
-		local _ = poseR6
 	end
 end
 
@@ -1453,6 +1622,7 @@ function RiderPose.Release(character: Model)
 	if not state then
 		return
 	end
+	states[character] = nil
 
 	for _, joint in state.joints do
 		if joint.Parent then
@@ -1468,8 +1638,6 @@ function RiderPose.Release(character: Model)
 	if state.animate and state.animate.Parent then
 		state.animate.Enabled = true
 	end
-
-	states[character] = nil
 end
 
 return RiderPose
@@ -1654,8 +1822,8 @@ end
 
 local driverChanged = ensureRemote("DriverChanged")
 local resetBike = ensureRemote("ResetBike")
-local setStance = ensureRemote("SetStance")
-local stanceChanged = ensureRemote("StanceChanged")
+local setStance = ensureRemote("SetStance") -- driver -> server, which trick they are holding
+local stanceChanged = ensureRemote("StanceChanged") -- server -> everyone
 local crashBike = ensureRemote("CrashBike")
 local crashed = ensureRemote("Crashed")
 local paintBike = ensureRemote("PaintBike")
@@ -1683,6 +1851,11 @@ end
 --------------------------------------------------------------------------------
 -- the bike
 --------------------------------------------------------------------------------
+
+local validTricks: { [string]: boolean } = {}
+for _, trick in Config.Tricks do
+	validTricks[trick.Id] = true
+end
 
 local bike: Model
 local chassis: Part
@@ -1771,6 +1944,7 @@ local function doCrash(reason: string)
 	stabilizer.MaxTorque = 0
 	setNetworkOwner(nil)
 
+	stanceChanged:FireAllClients(rider, nil)
 	crashed:FireAllClients(rider, reason)
 
 	task.delay(Config.Crash.RagdollTime, function()
@@ -1801,8 +1975,16 @@ local function onOccupantChanged()
 	setNetworkOwner(player)
 
 	if previous and previous ~= player then
-		stanceChanged:FireAllClients(previous, false)
+		stanceChanged:FireAllClients(previous, nil)
 	end
+
+	-- The ride prompt also lives on E, so it has to get out of the way while
+	-- someone is aboard or it would fight the stand-up trick.
+	local prompt = seat:FindFirstChild("RidePrompt")
+	if prompt and prompt:IsA("ProximityPrompt") then
+		prompt.Enabled = player == nil
+	end
+
 	driverChanged:FireAllClients(bike, player)
 end
 
@@ -1908,11 +2090,16 @@ crashBike.OnServerEvent:Connect(function(player, reason)
 	doCrash(reason)
 end)
 
-setStance.OnServerEvent:Connect(function(player, standing)
-	if player ~= currentDriver or typeof(standing) ~= "boolean" then
+setStance.OnServerEvent:Connect(function(player, trick)
+	if player ~= currentDriver then
 		return
 	end
-	stanceChanged:FireAllClients(player, standing)
+	-- nil means "back to the plain seated pose"; anything else has to name a
+	-- trick that actually exists.
+	if trick ~= nil and (typeof(trick) ~= "string" or not validTricks[trick]) then
+		return
+	end
+	stanceChanged:FireAllClients(player, trick)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
@@ -1978,6 +2165,7 @@ end)
 --   W / S or the mobile thumbstick .. throttle & brake
 --   A / D or the mobile thumbstick .. steer
 --   Q  or the WHEELIE button (hold) .. lift the front wheel
+--   E / F / G / H or the trick buttons (hold) .. tricks
 --   R  or the JUMP button .. jump
 --   T  or the RESET button .. put the bike back on the pad
 --   C  or the BIKE button .. paint shop
@@ -2031,16 +2219,19 @@ local engineSound: Sound? = nil
 local wheelieHeld = false
 local pitch = 0 -- degrees of nose-up; the thing being balanced
 local pitchVel = 0 -- degrees/sec
+local lean = 0 -- radians of bank, positive is left
 local heading: number? = nil
 local nextJump = 0
-local standing = false
+local heldTricks: { [string]: boolean } = {}
+local activeTrick: string? = nil
 local wasGrounded = true
 local mountedAt = 0
 local crashSent = false
 local touchInputs: { [Enum.UserInputType]: TextButton } = {}
 
 local cameraEnabled = Config.Camera.Enabled
-local riders: { [Player]: boolean } = {}
+-- Pose name per rider, "Seated" when they are not doing anything.
+local riders: { [Player]: string } = {}
 
 local paintChoice = { frame = 1, rim = 1, tyre = 1 }
 
@@ -2129,6 +2320,18 @@ hint.TextTransparency = 0.15
 hint.Visible = not UserInputService.TouchEnabled
 hint.Parent = gui
 
+local trickLabel = Instance.new("TextLabel")
+trickLabel.Name = "Trick"
+trickLabel.AnchorPoint = Vector2.new(0.5, 1)
+trickLabel.Position = UDim2.new(0.5, 0, 1, -88)
+trickLabel.Size = UDim2.new(0, 400, 0, 30)
+trickLabel.BackgroundTransparency = 1
+trickLabel.Font = Enum.Font.GothamBlack
+trickLabel.Text = ""
+trickLabel.TextSize = 24
+trickLabel.TextColor3 = Color3.fromRGB(96, 226, 160)
+trickLabel.Parent = gui
+
 local banner = Instance.new("TextLabel")
 banner.Name = "Banner"
 banner.AnchorPoint = Vector2.new(0.5, 0)
@@ -2172,6 +2375,23 @@ local wheelieButton = makeButton(gui, "Wheelie", "WHEELIE", UDim2.new(0, 132, 0,
 local jumpButton = makeButton(gui, "Jump", "JUMP", UDim2.new(0, 104, 0, 104), UDim2.new(1, -170, 1, -34), Config.Colors.Accent, 52)
 local resetButton = makeButton(gui, "Reset", "RESET", UDim2.new(0, 104, 0, 42), UDim2.new(1, -38, 1, -170), Color3.fromRGB(32, 33, 36), 12)
 local wheelieStroke = wheelieButton:FindFirstChildOfClass("UIStroke") :: UIStroke
+
+-- One touch button per trick, stacked up the left edge.
+local trickButtons: { [string]: TextButton } = {}
+for i, trick in Config.Tricks do
+	local b = makeButton(
+		gui,
+		"Trick" .. trick.Id,
+		trick.Name,
+		UDim2.new(0, 118, 0, 44),
+		UDim2.new(0, 142, 1, -24 - (i - 1) * 52),
+		Color3.fromRGB(38, 40, 44),
+		10
+	)
+	b.AnchorPoint = Vector2.new(1, 1)
+	b.TextSize = 13
+	trickButtons[trick.Id] = b
+end
 
 --------------------------------------------------------------------------------
 -- paint shop
@@ -2357,6 +2577,14 @@ local function tryJump()
 	end
 end
 
+local function setTrickHeld(id: string, held: boolean)
+	heldTricks[id] = held or nil
+	local button = trickButtons[id]
+	if button then
+		button.BackgroundTransparency = held and 0 or 0.12
+	end
+end
+
 local function onWheelieAction(_: string, state: Enum.UserInputState)
 	if state == Enum.UserInputState.Begin then
 		setWheelie(true)
@@ -2390,11 +2618,30 @@ wheelieButton.InputBegan:Connect(function(input)
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-	if touchInputs[input.UserInputType] == wheelieButton then
-		touchInputs[input.UserInputType] = nil
+	local target = touchInputs[input.UserInputType]
+	if not target then
+		return
+	end
+	touchInputs[input.UserInputType] = nil
+	if target == wheelieButton then
 		setWheelie(false)
+	else
+		for id, button in trickButtons do
+			if button == target then
+				setTrickHeld(id, false)
+			end
+		end
 	end
 end)
+
+for id, button in trickButtons do
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			touchInputs[input.UserInputType] = button
+			setTrickHeld(id, true)
+		end
+	end)
+end
 
 jumpButton.Activated:Connect(tryJump)
 resetButton.Activated:Connect(function()
@@ -2421,12 +2668,30 @@ local function bindControls()
 	ContextActionService:BindAction("ERideWheelie", onWheelieAction, false, Enum.KeyCode.Q)
 	ContextActionService:BindAction("ERideJump", onJumpAction, false, Enum.KeyCode.R)
 	ContextActionService:BindAction("ERideReset", onResetAction, false, Enum.KeyCode.T)
+
+	for _, trick in Config.Tricks do
+		local keyCode = (Enum.KeyCode :: any)[trick.Key]
+		if keyCode then
+			ContextActionService:BindAction("ERideTrick" .. trick.Id, function(_, state)
+				if state == Enum.UserInputState.Begin then
+					setTrickHeld(trick.Id, true)
+				elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+					setTrickHeld(trick.Id, false)
+				end
+				return Enum.ContextActionResult.Sink
+			end, false, keyCode)
+		end
+	end
 end
 
 local function unbindControls()
 	ContextActionService:UnbindAction("ERideWheelie")
 	ContextActionService:UnbindAction("ERideJump")
 	ContextActionService:UnbindAction("ERideReset")
+	for _, trick in Config.Tricks do
+		ContextActionService:UnbindAction("ERideTrick" .. trick.Id)
+		setTrickHeld(trick.Id, false)
+	end
 	setWheelie(false)
 	table.clear(touchInputs)
 end
@@ -2435,13 +2700,26 @@ end
 -- mounting
 --------------------------------------------------------------------------------
 
-local function pushStance(value: boolean)
-	if standing == value then
+local function pushTrick(id: string?)
+	if activeTrick == id then
 		return
 	end
-	standing = value
-	setStance:FireServer(value)
-	riders[player] = value
+	activeTrick = id
+	setStance:FireServer(id)
+	-- Pose ourselves immediately rather than waiting for the round trip.
+	riders[player] = id or "Seated"
+end
+
+-- The held trick that is actually allowed right now. Later entries in the
+-- config win when several are held at once.
+local function pickTrick(grounded: boolean): string?
+	for i = #Config.Tricks, 1, -1 do
+		local trick = Config.Tricks[i]
+		if heldTricks[trick.Id] and (not trick.AirOnly or not grounded) then
+			return trick.Id
+		end
+	end
+	return nil
 end
 
 local function releaseCamera()
@@ -2456,10 +2734,11 @@ local function stopDriving()
 	driving = false
 	bike, chassis, frontWheel, rearWheel = nil, nil, nil, nil
 	seat, stabilizer, rearHinge, steerHinge, readout = nil, nil, nil, nil, nil
-	pitch, pitchVel = 0, 0
+	pitch, pitchVel, lean = 0, 0, 0
 	heading = nil
-	standing = false
-	riders[player] = false
+	activeTrick = nil
+	trickLabel.Text = ""
+	riders[player] = nil
 	gui.Enabled = false
 	unbindControls()
 	releaseCamera()
@@ -2491,9 +2770,10 @@ local function startDriving(model: Model)
 	local display = dash and dash:FindFirstChild("Display")
 	readout = display and display:FindFirstChild("Readout") :: TextLabel?
 
-	pitch, pitchVel = 0, 0
+	pitch, pitchVel, lean = 0, 0, 0
 	heading = nil
-	standing = false
+	activeTrick = nil
+	riders[player] = "Seated"
 	nextJump = 0
 	crashSent = false
 	wasGrounded = true
@@ -2512,12 +2792,12 @@ driverChanged.OnClientEvent:Connect(function(model: Model, driver: Player?)
 	end
 end)
 
-stanceChanged.OnClientEvent:Connect(function(who: Player, value: boolean)
-	riders[who] = value
+stanceChanged.OnClientEvent:Connect(function(who: Player, trick: string?)
+	riders[who] = trick or "Seated"
 end)
 
 crashed.OnClientEvent:Connect(function(who: Player, reason: string)
-	riders[who] = false
+	riders[who] = nil
 	local character = who.Character
 	if character then
 		RiderPose.Release(character)
@@ -2620,10 +2900,10 @@ end
 
 RunService.Heartbeat:Connect(function(dt)
 	-- Pose every rider we know about, ourselves included.
-	for who, isStanding in riders do
+	for who, pose in riders do
 		local character = who.Character
 		if character and character.Parent then
-			RiderPose.Update(character, isStanding, dt)
+			RiderPose.Update(character, pose, dt)
 		end
 	end
 
@@ -2745,7 +3025,7 @@ RunService.Heartbeat:Connect(function(dt)
 		pitch = W.LoopOutAngle
 	end
 
-	pushStance(pitch > W.BalanceAngle * W.StandThreshold)
+	pushTrick(pickTrick(grounded))
 
 	----------------------------------------------------------------------------
 	-- steering and drive
@@ -2770,7 +3050,14 @@ RunService.Heartbeat:Connect(function(dt)
 	local lag = math.clamp(wrapAngle(newHeading - yaw), -Config.Handling.MaxHeadingLag, Config.Handling.MaxHeadingLag)
 	heading = yaw + lag
 
-	stab.CFrame = CFrame.Angles(0, heading, 0) * CFrame.Angles(math.rad(pitch), 0, 0)
+	-- Bank into the corner. Roll is still fully controlled, it just follows the
+	-- steering now instead of being pinned flat -- and it flattens out as the
+	-- front wheel comes up, because you cannot lean on the back wheel alone.
+	local leanScale = 1 - (1 - Config.Handling.LeanWheelieScale) * math.clamp(pitch / W.BalanceAngle, 0, 1)
+	local targetLean = -steer * math.rad(Config.Handling.MaxLean) * speedFactor * leanScale
+	lean += (targetLean - lean) * (1 - math.exp(-Config.Handling.LeanSpeed * dt))
+
+	stab.CFrame = CFrame.Angles(0, heading, 0) * CFrame.Angles(math.rad(pitch), 0, lean)
 
 	local drive = throttle
 	if drive < 0 then
@@ -2800,6 +3087,14 @@ RunService.Heartbeat:Connect(function(dt)
 		meterFill.BackgroundColor3 = Config.Colors.Frame
 		meterLabel.Text = string.format("WHEELIE  %d°", math.floor(pitch + 0.5))
 	end
+
+	local trickName = ""
+	for _, trick in Config.Tricks do
+		if trick.Id == activeTrick then
+			trickName = trick.Name
+		end
+	end
+	trickLabel.Text = trickName
 
 	if readout then
 		readout.Text = string.format("%d\nKM/H", math.floor(speed * 0.28 * 3.6 + 0.5))

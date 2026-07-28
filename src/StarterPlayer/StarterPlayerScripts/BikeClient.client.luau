@@ -10,6 +10,7 @@
 --   W / S or the mobile thumbstick .. throttle & brake
 --   A / D or the mobile thumbstick .. steer
 --   Q  or the WHEELIE button (hold) .. lift the front wheel
+--   E / F / G / H or the trick buttons (hold) .. tricks
 --   R  or the JUMP button .. jump
 --   T  or the RESET button .. put the bike back on the pad
 --   C  or the BIKE button .. paint shop
@@ -63,16 +64,19 @@ local engineSound: Sound? = nil
 local wheelieHeld = false
 local pitch = 0 -- degrees of nose-up; the thing being balanced
 local pitchVel = 0 -- degrees/sec
+local lean = 0 -- radians of bank, positive is left
 local heading: number? = nil
 local nextJump = 0
-local standing = false
+local heldTricks: { [string]: boolean } = {}
+local activeTrick: string? = nil
 local wasGrounded = true
 local mountedAt = 0
 local crashSent = false
 local touchInputs: { [Enum.UserInputType]: TextButton } = {}
 
 local cameraEnabled = Config.Camera.Enabled
-local riders: { [Player]: boolean } = {}
+-- Pose name per rider, "Seated" when they are not doing anything.
+local riders: { [Player]: string } = {}
 
 local paintChoice = { frame = 1, rim = 1, tyre = 1 }
 
@@ -161,6 +165,18 @@ hint.TextTransparency = 0.15
 hint.Visible = not UserInputService.TouchEnabled
 hint.Parent = gui
 
+local trickLabel = Instance.new("TextLabel")
+trickLabel.Name = "Trick"
+trickLabel.AnchorPoint = Vector2.new(0.5, 1)
+trickLabel.Position = UDim2.new(0.5, 0, 1, -88)
+trickLabel.Size = UDim2.new(0, 400, 0, 30)
+trickLabel.BackgroundTransparency = 1
+trickLabel.Font = Enum.Font.GothamBlack
+trickLabel.Text = ""
+trickLabel.TextSize = 24
+trickLabel.TextColor3 = Color3.fromRGB(96, 226, 160)
+trickLabel.Parent = gui
+
 local banner = Instance.new("TextLabel")
 banner.Name = "Banner"
 banner.AnchorPoint = Vector2.new(0.5, 0)
@@ -204,6 +220,23 @@ local wheelieButton = makeButton(gui, "Wheelie", "WHEELIE", UDim2.new(0, 132, 0,
 local jumpButton = makeButton(gui, "Jump", "JUMP", UDim2.new(0, 104, 0, 104), UDim2.new(1, -170, 1, -34), Config.Colors.Accent, 52)
 local resetButton = makeButton(gui, "Reset", "RESET", UDim2.new(0, 104, 0, 42), UDim2.new(1, -38, 1, -170), Color3.fromRGB(32, 33, 36), 12)
 local wheelieStroke = wheelieButton:FindFirstChildOfClass("UIStroke") :: UIStroke
+
+-- One touch button per trick, stacked up the left edge.
+local trickButtons: { [string]: TextButton } = {}
+for i, trick in Config.Tricks do
+	local b = makeButton(
+		gui,
+		"Trick" .. trick.Id,
+		trick.Name,
+		UDim2.new(0, 118, 0, 44),
+		UDim2.new(0, 142, 1, -24 - (i - 1) * 52),
+		Color3.fromRGB(38, 40, 44),
+		10
+	)
+	b.AnchorPoint = Vector2.new(1, 1)
+	b.TextSize = 13
+	trickButtons[trick.Id] = b
+end
 
 --------------------------------------------------------------------------------
 -- paint shop
@@ -389,6 +422,14 @@ local function tryJump()
 	end
 end
 
+local function setTrickHeld(id: string, held: boolean)
+	heldTricks[id] = held or nil
+	local button = trickButtons[id]
+	if button then
+		button.BackgroundTransparency = held and 0 or 0.12
+	end
+end
+
 local function onWheelieAction(_: string, state: Enum.UserInputState)
 	if state == Enum.UserInputState.Begin then
 		setWheelie(true)
@@ -422,11 +463,30 @@ wheelieButton.InputBegan:Connect(function(input)
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-	if touchInputs[input.UserInputType] == wheelieButton then
-		touchInputs[input.UserInputType] = nil
+	local target = touchInputs[input.UserInputType]
+	if not target then
+		return
+	end
+	touchInputs[input.UserInputType] = nil
+	if target == wheelieButton then
 		setWheelie(false)
+	else
+		for id, button in trickButtons do
+			if button == target then
+				setTrickHeld(id, false)
+			end
+		end
 	end
 end)
+
+for id, button in trickButtons do
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			touchInputs[input.UserInputType] = button
+			setTrickHeld(id, true)
+		end
+	end)
+end
 
 jumpButton.Activated:Connect(tryJump)
 resetButton.Activated:Connect(function()
@@ -453,12 +513,30 @@ local function bindControls()
 	ContextActionService:BindAction("ERideWheelie", onWheelieAction, false, Enum.KeyCode.Q)
 	ContextActionService:BindAction("ERideJump", onJumpAction, false, Enum.KeyCode.R)
 	ContextActionService:BindAction("ERideReset", onResetAction, false, Enum.KeyCode.T)
+
+	for _, trick in Config.Tricks do
+		local keyCode = (Enum.KeyCode :: any)[trick.Key]
+		if keyCode then
+			ContextActionService:BindAction("ERideTrick" .. trick.Id, function(_, state)
+				if state == Enum.UserInputState.Begin then
+					setTrickHeld(trick.Id, true)
+				elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+					setTrickHeld(trick.Id, false)
+				end
+				return Enum.ContextActionResult.Sink
+			end, false, keyCode)
+		end
+	end
 end
 
 local function unbindControls()
 	ContextActionService:UnbindAction("ERideWheelie")
 	ContextActionService:UnbindAction("ERideJump")
 	ContextActionService:UnbindAction("ERideReset")
+	for _, trick in Config.Tricks do
+		ContextActionService:UnbindAction("ERideTrick" .. trick.Id)
+		setTrickHeld(trick.Id, false)
+	end
 	setWheelie(false)
 	table.clear(touchInputs)
 end
@@ -467,13 +545,26 @@ end
 -- mounting
 --------------------------------------------------------------------------------
 
-local function pushStance(value: boolean)
-	if standing == value then
+local function pushTrick(id: string?)
+	if activeTrick == id then
 		return
 	end
-	standing = value
-	setStance:FireServer(value)
-	riders[player] = value
+	activeTrick = id
+	setStance:FireServer(id)
+	-- Pose ourselves immediately rather than waiting for the round trip.
+	riders[player] = id or "Seated"
+end
+
+-- The held trick that is actually allowed right now. Later entries in the
+-- config win when several are held at once.
+local function pickTrick(grounded: boolean): string?
+	for i = #Config.Tricks, 1, -1 do
+		local trick = Config.Tricks[i]
+		if heldTricks[trick.Id] and (not trick.AirOnly or not grounded) then
+			return trick.Id
+		end
+	end
+	return nil
 end
 
 local function releaseCamera()
@@ -488,10 +579,11 @@ local function stopDriving()
 	driving = false
 	bike, chassis, frontWheel, rearWheel = nil, nil, nil, nil
 	seat, stabilizer, rearHinge, steerHinge, readout = nil, nil, nil, nil, nil
-	pitch, pitchVel = 0, 0
+	pitch, pitchVel, lean = 0, 0, 0
 	heading = nil
-	standing = false
-	riders[player] = false
+	activeTrick = nil
+	trickLabel.Text = ""
+	riders[player] = nil
 	gui.Enabled = false
 	unbindControls()
 	releaseCamera()
@@ -523,9 +615,10 @@ local function startDriving(model: Model)
 	local display = dash and dash:FindFirstChild("Display")
 	readout = display and display:FindFirstChild("Readout") :: TextLabel?
 
-	pitch, pitchVel = 0, 0
+	pitch, pitchVel, lean = 0, 0, 0
 	heading = nil
-	standing = false
+	activeTrick = nil
+	riders[player] = "Seated"
 	nextJump = 0
 	crashSent = false
 	wasGrounded = true
@@ -544,12 +637,12 @@ driverChanged.OnClientEvent:Connect(function(model: Model, driver: Player?)
 	end
 end)
 
-stanceChanged.OnClientEvent:Connect(function(who: Player, value: boolean)
-	riders[who] = value
+stanceChanged.OnClientEvent:Connect(function(who: Player, trick: string?)
+	riders[who] = trick or "Seated"
 end)
 
 crashed.OnClientEvent:Connect(function(who: Player, reason: string)
-	riders[who] = false
+	riders[who] = nil
 	local character = who.Character
 	if character then
 		RiderPose.Release(character)
@@ -652,10 +745,10 @@ end
 
 RunService.Heartbeat:Connect(function(dt)
 	-- Pose every rider we know about, ourselves included.
-	for who, isStanding in riders do
+	for who, pose in riders do
 		local character = who.Character
 		if character and character.Parent then
-			RiderPose.Update(character, isStanding, dt)
+			RiderPose.Update(character, pose, dt)
 		end
 	end
 
@@ -777,7 +870,7 @@ RunService.Heartbeat:Connect(function(dt)
 		pitch = W.LoopOutAngle
 	end
 
-	pushStance(pitch > W.BalanceAngle * W.StandThreshold)
+	pushTrick(pickTrick(grounded))
 
 	----------------------------------------------------------------------------
 	-- steering and drive
@@ -802,7 +895,14 @@ RunService.Heartbeat:Connect(function(dt)
 	local lag = math.clamp(wrapAngle(newHeading - yaw), -Config.Handling.MaxHeadingLag, Config.Handling.MaxHeadingLag)
 	heading = yaw + lag
 
-	stab.CFrame = CFrame.Angles(0, heading, 0) * CFrame.Angles(math.rad(pitch), 0, 0)
+	-- Bank into the corner. Roll is still fully controlled, it just follows the
+	-- steering now instead of being pinned flat -- and it flattens out as the
+	-- front wheel comes up, because you cannot lean on the back wheel alone.
+	local leanScale = 1 - (1 - Config.Handling.LeanWheelieScale) * math.clamp(pitch / W.BalanceAngle, 0, 1)
+	local targetLean = -steer * math.rad(Config.Handling.MaxLean) * speedFactor * leanScale
+	lean += (targetLean - lean) * (1 - math.exp(-Config.Handling.LeanSpeed * dt))
+
+	stab.CFrame = CFrame.Angles(0, heading, 0) * CFrame.Angles(math.rad(pitch), 0, lean)
 
 	local drive = throttle
 	if drive < 0 then
@@ -832,6 +932,14 @@ RunService.Heartbeat:Connect(function(dt)
 		meterFill.BackgroundColor3 = Config.Colors.Frame
 		meterLabel.Text = string.format("WHEELIE  %d°", math.floor(pitch + 0.5))
 	end
+
+	local trickName = ""
+	for _, trick in Config.Tricks do
+		if trick.Id == activeTrick then
+			trickName = trick.Name
+		end
+	end
+	trickLabel.Text = trickName
 
 	if readout then
 		readout.Text = string.format("%d\nKM/H", math.floor(speed * 0.28 * 3.6 + 0.5))

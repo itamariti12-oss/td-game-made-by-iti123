@@ -277,6 +277,10 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 		return p
 	end
 
+	-- Parts that belong to the steering column but are convenient to describe
+	-- alongside their chassis-side neighbours; welded once the column exists.
+	local onColumnLater: { { any } } = {}
+
 	-- Battery pack: the big swappable box that fills the frame triangle.
 	onFrame(newPart(model, "BatteryBox", Vector3.new(1.42, 2.05, 2.45), L(0, 2.45, 0.35), C.Component, {
 		material = Enum.Material.Metal,
@@ -467,6 +471,42 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	-- Kickstand, folded up along the swingarm.
 	tubePart(chassis, "Kickstand", Vector3.new(-0.62, 1.95, 1.25), Vector3.new(-0.72, 1.60, 2.35), 0.16, C.Component)
 
+	-- Shrouds: the plastic panels that sweep from the steering head back over
+	-- the battery and into the seat. They are what gives these bikes their
+	-- silhouette, more than any single component does.
+	for _, side in { -1, 1 } do
+		local tag = side < 0 and "L" or "R"
+		onFrame(newPart(model, "ShroudFront" .. tag, Vector3.new(0.14, 1.5, 1.9), L(side * 0.62, 3.02, -1.85) * CFrame.Angles(0, 0, side * math.rad(9)) * CFrame.Angles(math.rad(-10), 0, 0), C.Frame))
+		onFrame(newPart(model, "ShroudRear" .. tag, Vector3.new(0.14, 1.25, 1.6), L(side * 0.76, 3.16, -0.45) * CFrame.Angles(0, 0, side * math.rad(4)) * CFrame.Angles(math.rad(-4), 0, 0), C.Frame))
+		onFrame(newPart(model, "ShroudVent" .. tag, Vector3.new(0.1, 0.5, 1.0), L(side * 0.70, 2.72, -1.6) * CFrame.Angles(0, 0, side * math.rad(9)), C.Component))
+		-- Fork guard on the lower leg.
+		onColumnLater[#onColumnLater + 1] = { "ForkGuard" .. tag, Vector3.new(0.12, 1.0, 0.5), L(side * 0.70, 2.35, -3.5) * raked }
+	end
+
+	-- Bash plate under the motor, and the linkage the shock pushes on.
+	onFrame(newPart(model, "BashPlate", Vector3.new(1.24, 0.16, 2.0), L(0, 1.52, 0.45) * CFrame.Angles(math.rad(-6), 0, 0), C.Silver, {
+		material = Enum.Material.DiamondPlate,
+	}))
+	tubePart(chassis, "LinkageArm", Vector3.new(0, 1.95, 2.20), Vector3.new(0, 1.72, 1.55), 0.26, C.DarkMetal)
+	tubePart(chassis, "LinkageRod", Vector3.new(0, 1.72, 1.55), Vector3.new(0, 1.98, 1.05), 0.18, C.Silver)
+
+	-- Rear brake pedal off the right peg, with its master cylinder.
+	tubePart(chassis, "BrakePedalArm", Vector3.new(0.86, 1.88, 0.95), Vector3.new(0.98, 1.72, -0.35), 0.14, C.Silver)
+	onFrame(newPart(model, "BrakePedalPad", Vector3.new(0.3, 0.1, 0.5), L(1.0, 1.70, -0.5), C.Silver, {
+		material = Enum.Material.DiamondPlate,
+	}))
+	onFrame(newPart(model, "MasterCylinder", Vector3.new(0.26, 0.6, 0.26), L(0.86, 2.25, 0.6), C.DarkMetal, {
+		material = Enum.Material.Metal,
+	}))
+
+	-- Hugger, tucked in close over the rear tyre.
+	onFrame(newPart(model, "RearHugger", Vector3.new(1.05, 0.14, 1.5), L(0, 3.25, 2.55) * CFrame.Angles(math.rad(-18), 0, 0), C.Component))
+
+	-- Chain roller on the swingarm.
+	onFrame(newPart(model, "ChainRoller", Vector3.new(0.22, 0.44, 0.44), L(0.66, 2.28, 1.35), C.Component, {
+		shape = Enum.PartType.Cylinder,
+	}))
+
 	----------------------------------------------------------------------------
 	-- steering column (everything that turns with the bars)
 	----------------------------------------------------------------------------
@@ -603,6 +643,13 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 	}))
 	onColumn(newPart(model, "FrontFender", Vector3.new(1.2, 0.18, 2.0), L(0, 3.06, -3.78) * CFrame.Angles(math.rad(12), 0, 0), C.Frame))
 	onColumn(newPart(model, "FenderStay", Vector3.new(0.9, 0.12, 0.5), L(0, 3.02, -3.24), C.Frame))
+	onColumn(newPart(model, "HeadlightBrace", Vector3.new(0.7, 0.14, 0.5), L(0, 4.22, -3.06) * raked, C.Component, {
+		material = Enum.Material.Metal,
+	}))
+
+	for _, spec in onColumnLater do
+		onColumn(newPart(model, spec[1], spec[2], spec[3], C.Component, { material = Enum.Material.Metal }))
+	end
 
 	----------------------------------------------------------------------------
 	-- wheels + joints
@@ -620,6 +667,19 @@ function BikeBuilder.Build(baseCF: CFrame): Model
 		{ shape = Enum.PartType.Cylinder, material = Enum.Material.Metal }
 	)
 	weld(rearWheel, sprocket)
+
+	for i = 1, 18 do
+		local a = (i / 18) * math.pi * 2
+		local tooth = newPart(
+			model,
+			"SprocketTooth" .. i,
+			Vector3.new(0.12, 0.18, 0.14),
+			baseCF * CFrame.new(G.RearAxle) * CFrame.new(chainX, 0, 0) * CFrame.Angles(a, 0, 0) * CFrame.new(0, rearSprocketR, 0),
+			C.Gold,
+			{ material = Enum.Material.Metal }
+		)
+		weld(rearWheel, tooth)
+	end
 
 	-- Parts joined by constraints still collide, so the three colliding
 	-- bodies are told explicitly not to touch each other.

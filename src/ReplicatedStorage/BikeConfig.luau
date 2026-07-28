@@ -77,6 +77,12 @@ BikeConfig.Handling = {
 	MaxHeadingLag = 0.40, -- radians the steering target may lead the chassis
 	StabilizerTorque = 4e6,
 	StabilizerResponsiveness = 45,
+
+	-- A bike banks into a corner. Roll is still fully controlled -- it just
+	-- follows the steering instead of being pinned at zero.
+	MaxLean = 30, -- degrees of bank at full lock and full speed
+	LeanSpeed = 7, -- how quickly it rolls in and out of the bank
+	LeanWheelieScale = 0.35, -- you cannot lean much when up on the back wheel
 }
 
 -- The wheelie is a real balance problem, not a fixed angle. The bike's pitch
@@ -102,7 +108,15 @@ BikeConfig.Wheelie = {
 	AirGravityScale = 0.12, -- gravity barely acts on pitch while airborne
 
 	TurnPenalty = 0.45, -- fraction of steering lost at full lift
-	StandThreshold = 0.4, -- fraction of BalanceAngle before the rider stands up
+}
+
+-- Tricks. Each is a rider pose held while its key is down; poses live in
+-- RiderPose. Air-only ones refuse to fire with a wheel on the ground.
+BikeConfig.Tricks = {
+	{ Id = "Stand", Name = "STAND UP", Key = "E", AirOnly = false },
+	{ Id = "NoHander", Name = "NO-HANDER", Key = "F", AirOnly = false },
+	{ Id = "Superman", Name = "SUPERMAN", Key = "G", AirOnly = true },
+	{ Id = "CanCan", Name = "CAN-CAN", Key = "H", AirOnly = true },
 }
 
 BikeConfig.Jump = {

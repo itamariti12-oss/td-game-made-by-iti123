@@ -38,8 +38,8 @@ end
 
 local driverChanged = ensureRemote("DriverChanged")
 local resetBike = ensureRemote("ResetBike")
-local setStance = ensureRemote("SetStance")
-local stanceChanged = ensureRemote("StanceChanged")
+local setStance = ensureRemote("SetStance") -- driver -> server, which trick they are holding
+local stanceChanged = ensureRemote("StanceChanged") -- server -> everyone
 local crashBike = ensureRemote("CrashBike")
 local crashed = ensureRemote("Crashed")
 local paintBike = ensureRemote("PaintBike")
@@ -67,6 +67,11 @@ end
 --------------------------------------------------------------------------------
 -- the bike
 --------------------------------------------------------------------------------
+
+local validTricks: { [string]: boolean } = {}
+for _, trick in Config.Tricks do
+	validTricks[trick.Id] = true
+end
 
 local bike: Model
 local chassis: Part
@@ -155,6 +160,7 @@ local function doCrash(reason: string)
 	stabilizer.MaxTorque = 0
 	setNetworkOwner(nil)
 
+	stanceChanged:FireAllClients(rider, nil)
 	crashed:FireAllClients(rider, reason)
 
 	task.delay(Config.Crash.RagdollTime, function()
@@ -185,8 +191,16 @@ local function onOccupantChanged()
 	setNetworkOwner(player)
 
 	if previous and previous ~= player then
-		stanceChanged:FireAllClients(previous, false)
+		stanceChanged:FireAllClients(previous, nil)
 	end
+
+	-- The ride prompt also lives on E, so it has to get out of the way while
+	-- someone is aboard or it would fight the stand-up trick.
+	local prompt = seat:FindFirstChild("RidePrompt")
+	if prompt and prompt:IsA("ProximityPrompt") then
+		prompt.Enabled = player == nil
+	end
+
 	driverChanged:FireAllClients(bike, player)
 end
 
@@ -292,11 +306,16 @@ crashBike.OnServerEvent:Connect(function(player, reason)
 	doCrash(reason)
 end)
 
-setStance.OnServerEvent:Connect(function(player, standing)
-	if player ~= currentDriver or typeof(standing) ~= "boolean" then
+setStance.OnServerEvent:Connect(function(player, trick)
+	if player ~= currentDriver then
 		return
 	end
-	stanceChanged:FireAllClients(player, standing)
+	-- nil means "back to the plain seated pose"; anything else has to name a
+	-- trick that actually exists.
+	if trick ~= nil and (typeof(trick) ~= "string" or not validTricks[trick]) then
+		return
+	end
+	stanceChanged:FireAllClients(player, trick)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
