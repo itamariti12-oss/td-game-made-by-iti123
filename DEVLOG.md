@@ -344,6 +344,42 @@ generators. The scripts stop with a clear message until then.
 
 ---
 
+## 11. Gemini key installed; blocked on billing, not on code
+
+**Prompt**
+
+> [pasted a Gemini API key] do it for me
+
+The key itself is deliberately **not** recorded here, and is not in the repo.
+
+**Steps taken**
+
+1. Tested the key before wiring anything: it authenticates fine and can see 56
+   models, including all three the design skill calls.
+2. Stored it in `.claude/settings.local.json`, which is gitignored and `chmod
+   600`. Confirmed with `git check-ignore` and a `git grep` across tracked
+   files that it appears nowhere git can reach.
+3. Ran the icon generator end to end. It failed — but not on anything in this
+   repo.
+
+**The real blocker.** Every model this key can list returns
+`429 RESOURCE_EXHAUSTED` with `limit: 0`. That is not a used-up allowance; it
+is Google granting the free tier **zero** requests. Probed
+`gemini-2.5-flash-image`, `gemini-3.1-flash-image`, `gemini-2.0-flash`,
+`gemini-2.5-pro` and `gemini-3.1-pro-preview` — all identical. The project
+behind the key has no billing enabled, and these models are no longer served
+on a free tier.
+
+So nothing further can be fixed from the code side. Enabling billing on the
+Google Cloud project behind the key makes the generators work with no other
+change, because the key is already installed correctly.
+
+**Flagged to the user:** the key was pasted into a chat transcript and should
+be rotated at https://aistudio.google.com/apikey regardless of the billing
+question.
+
+---
+
 ## Standing notes
 
 Things flagged along the way that are still true:
