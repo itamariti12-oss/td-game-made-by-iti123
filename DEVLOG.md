@@ -305,6 +305,45 @@ Roblox HUD regardless of stack.
 
 ---
 
+## 10. Gemini / Nano Banana generators
+
+**Prompt**
+
+> ok can u fix the gemini and nano bana apii problem fix it
+
+**What was actually broken.** Two things, neither of them the model ids.
+
+1. The `google-genai` SDK was not installed, so every generator stopped at its
+   import guard.
+2. Installing it was not enough. `import google.genai` still died with a Rust
+   panic out of `cryptography` — the image ships one whose bindings need
+   `_cffi_backend`, and `cffi` was missing. Upgrading `cffi` fixed it. The
+   symptom looks nothing like the cause, which is worth remembering.
+
+**Checked and found fine.** All three model ids are current:
+`gemini-2.5-flash-image` (Nano Banana), `gemini-3-pro-image-preview` (Nano
+Banana Pro) and `gemini-3.1-pro-preview` for SVG icons. The deprecated one is
+`gemini-3-pro-preview`, which these scripts do not use. Nothing to change.
+
+**Steps taken**
+
+1. Installed `google-genai`, then `cffi` to repair the import.
+2. Confirmed all three generators (`logo`, `icon`, `cip`) now load and parse
+   their arguments.
+3. Added a `SessionStart` hook in `.claude/settings.json` that reinstalls both
+   if missing. The container is ephemeral, so without this the fix would have
+   lasted exactly one session. It is async so it never blocks startup, and the
+   already-installed path costs 1.5 s. Pipe-tested both branches and validated
+   the JSON nesting with `jq -e`.
+4. Documented the setup in `CLAUDE.md`.
+
+**Still outstanding, and not fixable from here.** `GEMINI_API_KEY` is not set.
+That is a personal credential from https://aistudio.google.com/apikey and does
+not belong in the repo — `export GEMINI_API_KEY="..."` before running the
+generators. The scripts stop with a clear message until then.
+
+---
+
 ## Standing notes
 
 Things flagged along the way that are still true:

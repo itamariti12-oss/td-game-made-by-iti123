@@ -84,6 +84,24 @@ These target web and mobile UI — React, Next.js, Vue, Tailwind, shadcn,
 SwiftUI, Flutter. **None of those stacks exist in this repo**, which is Luau,
 so they will not fire on bike, physics or world code.
 
+### Gemini / Nano Banana
+
+The `design` skill's logo, icon and CIP generators call Google's Gemini image
+models (`gemini-2.5-flash-image` "Nano Banana", `gemini-3-pro-image-preview`
+"Nano Banana Pro", and `gemini-3.1-pro-preview` for SVG icons). All three model
+ids are current.
+
+They need two things:
+
+1. **The `google-genai` SDK.** A `SessionStart` hook in `.claude/settings.json`
+   installs it if missing, because the container is ephemeral and pip installs
+   do not survive. Note it also upgrades `cffi` — the image ships a `cryptography`
+   whose Rust bindings panic without it, which makes `import google.genai` fail
+   in a way that looks nothing like a missing dependency.
+2. **An API key**, which is not in the repo and should never be:
+   `export GEMINI_API_KEY="..."` from https://aistudio.google.com/apikey.
+   Without it the scripts stop with a clear message rather than failing oddly.
+
 Where they can still earn their keep is the raw design data — colour palettes,
 typography, spacing scales, accessibility and UX guidelines — which applies to
 the Roblox HUD (balance meter, trick buttons, paint shop panel) even though the
