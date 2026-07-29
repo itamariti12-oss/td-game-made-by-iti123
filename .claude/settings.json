@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c 'import google.genai' 2>/dev/null || pip install -q --upgrade google-genai cffi 2>/dev/null || true",
+            "timeout": 300,
+            "async": true,
+            "statusMessage": "Checking the Gemini SDK for the design skill"
+          }
+        ]
+      }
+    ]
+  }
+}
